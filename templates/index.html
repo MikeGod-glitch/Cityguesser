@@ -3,6 +3,7 @@
 
 <head>
 
+    <meta charset="utf-8">
     <title>Guess The City</title>
 
     <style>
@@ -15,6 +16,8 @@
         img{
             width:800px;
             max-width:90%;
+            max-height:60vh;
+            object-fit:contain;
         }
 
         input{
@@ -36,8 +39,10 @@
 
 <h1>Guess The City</h1>
 
-<img src="{{ url_for('static',
-filename='images/' + image) }}">
+<img src="{{ image_url }}" alt="Guess the city" onerror="this.onerror=null;this.src='{{ fallback_url }}'">
+{% if source_url %}
+<p><small>Photo: {{ credit[0] }} · {{ credit[1] }} · <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer">Source and license</a></small></p>
+{% endif %}
 
 <br><br>
 

@@ -1,79 +1,58 @@
-<!DOCTYPE html>
-<html>
-
+<!doctype html>
+<html lang="en">
 <head>
-
     <meta charset="utf-8">
-    <title>Guess The City</title>
-
-    <style>
-
-        body{
-            text-align:center;
-            font-family:Arial;
-        }
-
-        img{
-            width:800px;
-            max-width:90%;
-            max-height:60vh;
-            object-fit:contain;
-        }
-
-        input{
-            padding:10px;
-            font-size:16px;
-        }
-
-        button{
-            padding:10px 20px;
-            font-size:16px;
-            margin-top:10px;
-        }
-
-    </style>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b1720">
+    <title>City Guesser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="{{ url_for('static', filename='script.js') }}" defer></script>
 </head>
-
 <body>
+    <div class="page-shell">
+        <header class="site-header">
+            <a class="brand" href="/" aria-label="City Guesser home">
+                <span class="brand-mark" aria-hidden="true"><span></span></span>
+                <span class="brand-name">CITY<span>GUESSER</span></span>
+            </a>
+        </header>
 
-<h1>Guess The City</h1>
+        <main class="game-layout">
+            <section class="photo-section" aria-label="City photo clue">
+                <div class="photo-frame">
+                    <img class="city-photo" src="{{ image_url }}" alt="A city to identify" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+                    <a class="photo-error" href="/next" hidden>Image unavailable · Next city</a>
+                </div>
+                {% if source_url %}
+                <p class="photo-credit">{{ credit[0] }} · {{ credit[1] }} · <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer">Source</a></p>
+                {% endif %}
+            </section>
 
-<img src="{{ image_url }}" alt="Guess the city" onerror="this.onerror=null;this.src='{{ fallback_url }}'">
-{% if source_url %}
-<p><small>Photo: {{ credit[0] }} · {{ credit[1] }} · <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer">Source and license</a></small></p>
-{% endif %}
+            <section class="answer-panel" aria-labelledby="game-title">
+                <div class="panel-content">
+                    <h1 id="game-title">Which city is this?</h1>
 
-<br><br>
-
-<form action="/check" method="POST">
-
-    <input
-            type="text"
-            name="guess"
-            placeholder="Enter city name"
-            required>
-
-    <button type="submit">
-        Submit
-    </button>
-
-</form>
-
-{% if result %}
-
-<h2>{{ result }}</h2>
-
-<a href="/next">
-
-    <button>
-        Next Question
-    </button>
-
-</a>
-
-{% endif %}
-
+                    {% if result %}
+                    <div class="result-card {{ 'is-correct' if result.startswith('✅') else 'is-incorrect' }}" role="status">
+                        <span class="result-icon" aria-hidden="true">{{ '✓' if result.startswith('✅') else '×' }}</span>
+                        <div>
+                            <h2>{{ result[2:] }}</h2>
+                        </div>
+                    </div>
+                    <a class="primary-button next-button" href="/next">Next city</a>
+                    {% else %}
+                    <form class="guess-form" action="/check" method="post">
+                        <label class="sr-only" for="city-guess">City name</label>
+                        <div class="input-wrap">
+                            <span class="input-pin" aria-hidden="true"></span>
+                            <input id="city-guess" type="text" name="guess" placeholder="City name" autocomplete="off" spellcheck="false" required>
+                        </div>
+                        <button class="primary-button" type="submit">Submit</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </section>
+        </main>
+    </div>
 </body>
-
 </html>

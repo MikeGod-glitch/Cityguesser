@@ -1,10 +1,13 @@
 from flask import Flask, render_template, request, session
 from urllib.parse import quote
 from pathlib import Path
+import os
 import random
 
+from city_provider import get_random_question
+
 app = Flask(__name__)
-app.secret_key = "city_game_secret"
+app.secret_key = os.environ.get("CITY_GUESSER_SECRET", "city-game-development-secret")
 
 # Wikimedia Commons file names. See static/images/SOURCES.md for credits.
 commons = {
@@ -58,7 +61,7 @@ cities += [
 ]
 
 
-def get_new_question():
+def get_local_question():
     if "remaining" not in session or not session["remaining"]:
         session["remaining"] = list(range(len(cities)))
 
@@ -66,11 +69,29 @@ def get_new_question():
     idx = random.choice(remaining)
     remaining.remove(idx)
     session["remaining"] = remaining
-    session["current"] = idx
-    return cities[idx]
+    city = cities[idx].copy()
+    city["aliases"] = []
+    city["is_dynamic"] = False
+    return city
+
+
+def get_new_question():
+    recent_images = session.get("recent_images", [])
+    city = get_random_question(recent_images) or get_local_question()
+    if city.get("image_id"):
+        recent_images.append(city["image_id"])
+        session["recent_images"] = recent_images[-10:]
+    session["current_question"] = city
+    return city
 
 
 def render_question(city, result=None):
+    if city.get("is_dynamic"):
+        return render_template(
+            "index.html", image_url=city["image_url"], fallback_url=None,
+            source_url=city["source_url"], credit=city["credit"], result=result,
+        )
+
     fallback_url = f"/static/images/{city['image']}"
     source_url = None
     credit = None
@@ -92,15 +113,18 @@ def render_question(city, result=None):
 
 @app.route("/")
 def home():
-    city = get_new_question() if "current" not in session else cities[session["current"]]
+    city = session.get("current_question") or get_new_question()
     return render_question(city)
 
 
 @app.route("/check", methods=["POST"])
 def check():
-    city = cities[session["current"]]
+    city = session.get("current_question")
+    if not city:
+        return render_question(get_new_question())
     guess = request.form["guess"]
-    if guess.strip().casefold() == city["answer"].casefold():
+    accepted_answers = [city["answer"], *city.get("aliases", [])]
+    if guess.strip().casefold() in {answer.casefold() for answer in accepted_answers}:
         result = "✅ Correct!"
     else:
         result = f"❌ Wrong! Answer: {city['answer']}"

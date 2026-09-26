@@ -11,9 +11,12 @@ from urllib.request import Request, urlopen
 
 
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
+ZH_WIKIPEDIA_API = "https://zh.wikipedia.org/w/api.php"
+EN_WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 USER_AGENT = "CityGuesser/1.0 (educational city photo game)"
 CACHE_TTL_SECONDS = 6 * 60 * 60
 CREDIT_CACHE_TTL_SECONDS = 24 * 60 * 60
+INTRO_CACHE_TTL_SECONDS = 24 * 60 * 60
 REQUEST_TIMEOUT_SECONDS = 4
 MIN_PHOTO_SCORE = 5
 
@@ -74,6 +77,7 @@ CITIES = [
 
 _photo_cache = {}
 _credit_cache = {}
+_intro_cache = {}
 _cache_lock = Lock()
 _blocked_title_words = {
     "flag", "map", "logo", "coat of arms", "locator", "diagram",
@@ -104,10 +108,10 @@ _quality_words = {"quality image", "featured picture", "valued image"}
 _html_tag = re.compile(r"<[^>]+>")
 
 
-def _api_get(params):
+def _api_get(params, endpoint=COMMONS_API):
     query = urlencode({"format": "json", "formatversion": 2, **params})
     request = Request(
-        f"{COMMONS_API}?{query}",
+        f"{endpoint}?{query}",
         headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
     )
     with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
@@ -251,6 +255,68 @@ def _add_credit(photo):
             "metadata": credit,
         }
     return photo
+
+
+def _fetch_city_intro(title, endpoint):
+    data = _api_get({
+        "action": "query",
+        "titles": title,
+        "redirects": 1,
+        "prop": "extracts|info",
+        "exintro": 1,
+        "explaintext": 1,
+        "exchars": 360,
+        "inprop": "url",
+    }, endpoint=endpoint)
+    pages = data.get("query", {}).get("pages", [])
+    if not pages or pages[0].get("missing"):
+        return None
+    text = " ".join(pages[0].get("extract", "").split())
+    if not text:
+        return None
+    return {
+        "text": text,
+        "source_url": pages[0].get("fullurl"),
+    }
+
+
+def get_city_intro(city):
+    """Return a cached Wikipedia introduction for a question's city."""
+    cache_key = city["answer"]
+    with _cache_lock:
+        cached = _intro_cache.get(cache_key)
+    if cached and cached["expires_at"] > time.time():
+        return cached["intro"]
+
+    chinese_title = next(
+        (
+            alias for alias in city.get("aliases", [])
+            if any("\u4e00" <= char <= "\u9fff" for char in alias)
+        ),
+        None,
+    )
+    sources = []
+    if chinese_title:
+        sources.append((chinese_title, ZH_WIKIPEDIA_API))
+    sources.append((city["answer"], EN_WIKIPEDIA_API))
+
+    for title, endpoint in sources:
+        try:
+            intro = _fetch_city_intro(title, endpoint)
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            continue
+        if intro:
+            with _cache_lock:
+                _intro_cache[cache_key] = {
+                    "expires_at": time.time() + INTRO_CACHE_TTL_SECONDS,
+                    "intro": intro,
+                }
+            return intro
+
+    return {
+        "text": "城市介绍暂时无法加载。",
+        "source_url": None,
+    }
 
 
 def get_random_question(excluded_images=()):

@@ -35,7 +35,19 @@
                 <div class="panel-content">
                     <h1 id="game-title">Which city is this?</h1>
 
-                    {% if result %}
+                    {% if revealed_answer %}
+                    <div class="result-card is-revealed" role="status">
+                        <span class="result-icon" aria-hidden="true">?</span>
+                        <div>
+                            <h2>Answer: {{ revealed_answer }}</h2>
+                            <p class="city-intro">{{ city_intro.text }}</p>
+                            {% if city_intro.source_url %}
+                            <a class="intro-source" href="{{ city_intro.source_url }}" target="_blank" rel="noopener noreferrer">Source: Wikipedia</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <a class="primary-button next-button" href="/next">Next city</a>
+                    {% elif result %}
                     <div class="result-card {{ 'is-correct' if result.startswith('✅') else 'is-incorrect' }}" role="status">
                         <span class="result-icon" aria-hidden="true">{{ '✓' if result.startswith('✅') else '×' }}</span>
                         <div>
@@ -50,7 +62,10 @@
                             <span class="input-pin" aria-hidden="true"></span>
                             <input id="city-guess" type="text" name="guess" placeholder="City name" autocomplete="off" spellcheck="false" required>
                         </div>
-                        <button class="primary-button" type="submit">Submit</button>
+                        <div class="form-actions">
+                            <button class="primary-button" type="submit">Submit</button>
+                            <button class="secondary-button reveal-button" type="submit" formaction="/reveal" formmethod="post" formnovalidate>I don't know</button>
+                        </div>
                     </form>
                     {% endif %}
                 </div>

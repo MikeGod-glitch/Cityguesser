@@ -8,7 +8,7 @@ import random
 import secrets
 import time
 
-from city_provider import CITIES, get_random_question
+from city_provider import CITIES, get_city_intro, get_random_question
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("CITY_GUESSER_SECRET", "city-game-development-secret")
@@ -163,12 +163,26 @@ def get_next_question():
     return city
 
 
-def render_question(city, result=None, preload_url=None):
+def get_revealed_answer(city):
+    chinese_name = next(
+        (
+            alias for alias in city.get("aliases", [])
+            if any("\u4e00" <= char <= "\u9fff" for char in alias)
+        ),
+        None,
+    )
+    return f"{chinese_name} / {city['answer']}" if chinese_name else city["answer"]
+
+
+def render_question(
+    city, result=None, preload_url=None, revealed_answer=None, city_intro=None,
+):
     if city.get("is_dynamic"):
         return render_template(
             "index.html", image_url=city["image_url"], fallback_url=None,
             source_url=city["source_url"], credit=city["credit"], result=result,
             preload_url=preload_url,
+            revealed_answer=revealed_answer, city_intro=city_intro,
         )
 
     fallback_url = f"/static/images/{city['image']}"
@@ -188,6 +202,7 @@ def render_question(city, result=None, preload_url=None):
         "index.html", image_url=image_url, fallback_url=fallback_url,
         source_url=source_url, credit=credit, result=result,
         preload_url=preload_url,
+        revealed_answer=revealed_answer, city_intro=city_intro,
     )
 
 
@@ -215,6 +230,26 @@ def check():
     next_city = get_prefetched_question()
     preload_url = next_city.get("image_url") if next_city else None
     return render_question(city, result, preload_url)
+
+
+@app.route("/reveal", methods=["POST"])
+def reveal_answer():
+    city = session.get("current_question")
+    if not city:
+        city = get_new_question()
+        start_question_prefetch()
+        return render_question(city)
+
+    start_question_prefetch()
+    intro = get_city_intro(city)
+    next_city = get_prefetched_question()
+    preload_url = next_city.get("image_url") if next_city else None
+    return render_question(
+        city,
+        preload_url=preload_url,
+        revealed_answer=get_revealed_answer(city),
+        city_intro=intro,
+    )
 
 
 @app.route("/next")

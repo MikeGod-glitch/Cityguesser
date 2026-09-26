@@ -4,7 +4,7 @@ from pathlib import Path
 import os
 import random
 
-from city_provider import get_random_question
+from city_provider import CITIES, get_random_question
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("CITY_GUESSER_SECRET", "city-game-development-secret")
@@ -59,6 +59,7 @@ cities += [
     {"image": f"{name.replace(' ', '')}.svg", "answer": name, "commons": filename}
     for name, filename in commons.items()
 ]
+city_aliases = {name: aliases for name, aliases, _lat, _lon in CITIES}
 
 
 def get_local_question():
@@ -70,7 +71,7 @@ def get_local_question():
     remaining.remove(idx)
     session["remaining"] = remaining
     city = cities[idx].copy()
-    city["aliases"] = []
+    city["aliases"] = city_aliases.get(city["answer"], [])
     city["is_dynamic"] = False
     return city
 

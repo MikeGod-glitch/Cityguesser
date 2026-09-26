@@ -1,13 +1,23 @@
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from flask import Flask, render_template, request, session
+from threading import Lock
 from urllib.parse import quote
 from pathlib import Path
 import os
 import random
+import secrets
+import time
 
 from city_provider import CITIES, get_random_question
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("CITY_GUESSER_SECRET", "city-game-development-secret")
+
+PREFETCH_WAIT_SECONDS = 0.3
+PREFETCH_TTL_SECONDS = 30 * 60
+_prefetch_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="city-question")
+_prefetches = {}
+_prefetch_lock = Lock()
 
 # Wikimedia Commons file names. See static/images/SOURCES.md for credits.
 commons = {
@@ -76,9 +86,8 @@ def get_local_question():
     return city
 
 
-def get_new_question():
-    recent_images = session.get("recent_images", [])
-    city = get_random_question(recent_images) or get_local_question()
+def remember_question(city):
+    recent_images = list(session.get("recent_images", []))
     if city.get("image_id"):
         recent_images.append(city["image_id"])
         session["recent_images"] = recent_images[-10:]
@@ -86,11 +95,80 @@ def get_new_question():
     return city
 
 
-def render_question(city, result=None):
+def get_new_question():
+    recent_images = session.get("recent_images", [])
+    city = get_random_question(recent_images) or get_local_question()
+    return remember_question(city)
+
+
+def get_player_id():
+    if "player_id" not in session:
+        session["player_id"] = secrets.token_urlsafe(12)
+    return session["player_id"]
+
+
+def start_question_prefetch():
+    player_id = get_player_id()
+    recent_images = tuple(session.get("recent_images", []))
+    now = time.monotonic()
+
+    with _prefetch_lock:
+        for stale_id, (future, created_at) in list(_prefetches.items()):
+            if now - created_at > PREFETCH_TTL_SECONDS:
+                future.cancel()
+                _prefetches.pop(stale_id, None)
+
+        existing = _prefetches.get(player_id)
+        if existing:
+            future = existing[0]
+            if not future.done():
+                return
+            try:
+                if future.result() is not None:
+                    return
+            except Exception:
+                pass
+            _prefetches.pop(player_id, None)
+
+        future = _prefetch_executor.submit(get_random_question, recent_images)
+        _prefetches[player_id] = (future, now)
+
+
+def get_prefetched_question(wait_seconds=0, consume=False):
+    player_id = get_player_id()
+    with _prefetch_lock:
+        entry = _prefetches.get(player_id)
+    if not entry:
+        return None
+
+    future = entry[0]
+    try:
+        city = future.result(timeout=wait_seconds)
+    except FutureTimeout:
+        return None
+    except Exception:
+        city = None
+
+    if consume or city is None:
+        with _prefetch_lock:
+            if _prefetches.get(player_id) == entry:
+                _prefetches.pop(player_id, None)
+    return city
+
+
+def get_next_question():
+    city = get_prefetched_question(PREFETCH_WAIT_SECONDS, consume=True)
+    city = remember_question(city or get_local_question())
+    start_question_prefetch()
+    return city
+
+
+def render_question(city, result=None, preload_url=None):
     if city.get("is_dynamic"):
         return render_template(
             "index.html", image_url=city["image_url"], fallback_url=None,
             source_url=city["source_url"], credit=city["credit"], result=result,
+            preload_url=preload_url,
         )
 
     fallback_url = f"/static/images/{city['image']}"
@@ -109,12 +187,14 @@ def render_question(city, result=None):
     return render_template(
         "index.html", image_url=image_url, fallback_url=fallback_url,
         source_url=source_url, credit=credit, result=result,
+        preload_url=preload_url,
     )
 
 
 @app.route("/")
 def home():
     city = session.get("current_question") or get_new_question()
+    start_question_prefetch()
     return render_question(city)
 
 
@@ -122,19 +202,24 @@ def home():
 def check():
     city = session.get("current_question")
     if not city:
-        return render_question(get_new_question())
+        city = get_new_question()
+        start_question_prefetch()
+        return render_question(city)
     guess = request.form["guess"]
     accepted_answers = [city["answer"], *city.get("aliases", [])]
     if guess.strip().casefold() in {answer.casefold() for answer in accepted_answers}:
         result = "✅ Correct!"
     else:
         result = f"❌ Wrong! Answer: {city['answer']}"
-    return render_question(city, result)
+    start_question_prefetch()
+    next_city = get_prefetched_question()
+    preload_url = next_city.get("image_url") if next_city else None
+    return render_question(city, result, preload_url)
 
 
 @app.route("/next")
 def next_question():
-    return render_question(get_new_question())
+    return render_question(get_next_question())
 
 
 if __name__ == "__main__":

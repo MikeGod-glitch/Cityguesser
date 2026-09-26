@@ -4,6 +4,7 @@ from html import unescape
 import json
 import random
 import re
+from threading import Lock
 import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -11,7 +12,8 @@ from urllib.request import Request, urlopen
 
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 USER_AGENT = "CityGuesser/1.0 (educational city photo game)"
-CACHE_TTL_SECONDS = 60 * 60
+CACHE_TTL_SECONDS = 6 * 60 * 60
+CREDIT_CACHE_TTL_SECONDS = 24 * 60 * 60
 REQUEST_TIMEOUT_SECONDS = 4
 MIN_PHOTO_SCORE = 5
 
@@ -71,6 +73,8 @@ CITIES = [
 ]
 
 _photo_cache = {}
+_credit_cache = {}
+_cache_lock = Lock()
 _blocked_title_words = {
     "flag", "map", "logo", "coat of arms", "locator", "diagram",
     "icon", "symbol", "route map", "district map", "seal",
@@ -159,7 +163,8 @@ def _photo_score(city, title, categories, width, height):
 
 def _fetch_photos(city):
     name, _aliases, lat, lon = city
-    cached = _photo_cache.get(name)
+    with _cache_lock:
+        cached = _photo_cache.get(name)
     if cached and cached["expires_at"] > time.time():
         return cached["photos"]
 
@@ -200,14 +205,21 @@ def _fetch_photos(city):
             "source_url": info.get("descriptionurl", ""),
         })
 
-    _photo_cache[name] = {
-        "expires_at": time.time() + CACHE_TTL_SECONDS,
-        "photos": photos,
-    }
+    with _cache_lock:
+        _photo_cache[name] = {
+            "expires_at": time.time() + CACHE_TTL_SECONDS,
+            "photos": photos,
+        }
     return photos
 
 
 def _add_credit(photo):
+    with _cache_lock:
+        cached = _credit_cache.get(photo["title"])
+    if cached and cached["expires_at"] > time.time():
+        photo.update(cached["metadata"])
+        return photo
+
     data = _api_get({
         "action": "query",
         "titles": photo["title"],
@@ -221,14 +233,23 @@ def _add_credit(photo):
         return photo
     info = (pages[0].get("imageinfo") or [{}])[0]
     metadata = info.get("extmetadata", {})
-    photo["source_url"] = info.get("descriptionurl", photo["source_url"])
-    photo["author"] = _clean_metadata(
-        metadata.get("Artist") or metadata.get("Credit"), "Wikimedia contributor"
-    )
-    photo["license"] = _clean_metadata(
-        metadata.get("LicenseShortName") or metadata.get("UsageTerms"),
-        "See source for license",
-    )
+    credit = {
+        "source_url": info.get("descriptionurl", photo["source_url"]),
+        "author": _clean_metadata(
+            metadata.get("Artist") or metadata.get("Credit"),
+            "Wikimedia contributor",
+        ),
+        "license": _clean_metadata(
+            metadata.get("LicenseShortName") or metadata.get("UsageTerms"),
+            "See source for license",
+        ),
+    }
+    photo.update(credit)
+    with _cache_lock:
+        _credit_cache[photo["title"]] = {
+            "expires_at": time.time() + CREDIT_CACHE_TTL_SECONDS,
+            "metadata": credit,
+        }
     return photo
 
 

@@ -33,6 +33,12 @@
 
             <section class="answer-panel" aria-labelledby="game-title">
                 <div class="panel-content">
+                    <div class="scoreboard" aria-label="Current game score">
+                        <div><span>Score</span><strong>{{ stats.score }}</strong></div>
+                        <div><span>Streak</span><strong>{{ stats.streak }}</strong></div>
+                        <div><span>Best</span><strong>{{ stats.best_streak }}</strong></div>
+                        <div><span>Played</span><strong>{{ stats.answered }}</strong></div>
+                    </div>
                     <h1 id="game-title">Which city is this?</h1>
 
                     {% if revealed_answer %}
@@ -40,6 +46,7 @@
                         <span class="result-icon" aria-hidden="true">?</span>
                         <div>
                             <h2>Answer: {{ revealed_answer }}</h2>
+                            <p class="round-score">No points · streak reset</p>
                             <p class="city-intro">{{ city_intro.text }}</p>
                             {% if city_intro.source_url %}
                             <a class="intro-source" href="{{ city_intro.source_url }}" target="_blank" rel="noopener noreferrer">Source: Wikipedia</a>
@@ -52,11 +59,13 @@
                         <span class="result-icon" aria-hidden="true">{{ '✓' if result.startswith('✅') else '×' }}</span>
                         <div>
                             <h2>{{ result[2:] }}</h2>
+                            <p class="round-score">{{ '+' ~ round_points ~ ' points' if round_points else 'No points · streak reset' }}</p>
                         </div>
                     </div>
                     <a class="primary-button next-button" href="/next">Next city</a>
                     {% else %}
                     <form class="guess-form" action="/check" method="post">
+                        <input type="hidden" name="question_id" value="{{ question_id }}">
                         <label class="sr-only" for="city-guess">City name</label>
                         <div class="input-wrap">
                             <span class="input-pin" aria-hidden="true"></span>
@@ -68,6 +77,9 @@
                         </div>
                     </form>
                     {% endif %}
+                    <form class="reset-form" action="/reset" method="post">
+                        <button class="reset-button" type="submit">Start a new game</button>
+                    </form>
                 </div>
             </section>
         </main>

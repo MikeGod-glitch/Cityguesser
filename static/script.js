@@ -6,7 +6,7 @@ if (guessForm) {
 
     guessForm.addEventListener('submit', event => {
         const submitButton = event.submitter || submitButtons[0];
-        submitButton.disabled = true;
+        submitButtons.forEach(button => { button.disabled = true; });
         submitButton.textContent = submitButton.classList.contains('reveal-button')
             ? 'Loading answer…'
             : 'Checking your guess…';

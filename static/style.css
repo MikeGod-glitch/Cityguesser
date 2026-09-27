@@ -77,6 +77,11 @@ button, input { font: inherit; }
 
 .answer-panel { min-height: 560px; display: flex; flex-direction: column; justify-content: center; animation: rise-in .65s .1s ease both; }
 .panel-content { margin: auto 0; }
+.scoreboard { display: grid; grid-template-columns: repeat(4, 1fr); max-width: 520px; margin-bottom: 24px; border: 1px solid rgba(217, 234, 221, .12); border-radius: 9px; background: rgba(21, 42, 51, .72); }
+.scoreboard div { display: flex; min-width: 0; flex-direction: column; gap: 3px; padding: 12px 14px; border-right: 1px solid rgba(217, 234, 221, .1); }
+.scoreboard div:last-child { border-right: 0; }
+.scoreboard span { color: #92a8aa; font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.scoreboard strong { color: #f3f3eb; font-size: 1.08rem; font-variant-numeric: tabular-nums; }
 h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem); font-weight: 720; letter-spacing: -.065em; line-height: 1.06; }
 .guess-form { max-width: 420px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
@@ -105,9 +110,14 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 .is-incorrect .result-icon { background: #f09e82; color: #391d1c; }
 .is-revealed .result-icon { background: #eeb16d; color: #362616; }
 .result-card h2 { margin: 0; font-size: 1.12rem; font-weight: 700; line-height: 1.4; }
+.round-score { margin: 5px 0 0; color: #eeb16d; font-size: .78rem; font-weight: 700; }
 .city-intro { margin: 12px 0 10px; color: #cad8d5; font-size: .9rem; line-height: 1.7; }
 .intro-source { color: #eeb16d; font-size: .76rem; text-underline-offset: 3px; }
 .next-button { max-width: 420px; }
+.reset-form { max-width: 420px; margin-top: 18px; text-align: center; }
+.reset-button { padding: 4px 6px; border: 0; background: transparent; color: #92a8aa; cursor: pointer; font-size: .72rem; text-decoration: underline; text-decoration-color: rgba(146, 168, 170, .45); text-underline-offset: 3px; }
+.reset-button:hover { color: #fff; }
+.reset-button:focus-visible { outline: 2px solid #eeb16d; outline-offset: 3px; }
 
 @keyframes rise-in { from { opacity: 0; transform: translateY(13px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -133,6 +143,8 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
     .photo-error { inset: 8px; border-radius: 6px; }
     .photo-credit { margin-top: 10px; font-size: .65rem; }
     h1 { font-size: clamp(2.45rem, 11vw, 3.5rem); }
+    .scoreboard div { padding: 10px 8px; }
+    .scoreboard span { font-size: .58rem; }
     .input-wrap input, .primary-button, .secondary-button { min-height: 57px; height: 57px; }
     .form-actions { grid-template-columns: 1fr; }
 }

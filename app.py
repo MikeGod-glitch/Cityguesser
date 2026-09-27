@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
-from flask import Flask, render_template, request, session
+from flask import Flask, redirect, render_template, request, session, url_for
 from threading import Lock
 from urllib.parse import quote
 from pathlib import Path
@@ -87,11 +87,17 @@ def get_local_question():
 
 
 def remember_question(city):
+    city = city.copy()
+    city["question_id"] = secrets.token_urlsafe(8)
     recent_images = list(session.get("recent_images", []))
     if city.get("image_id"):
         recent_images.append(city["image_id"])
         session["recent_images"] = recent_images[-10:]
     session["current_question"] = city
+    session["question_resolved"] = False
+    session.pop("question_result", None)
+    session.pop("question_points", None)
+    session.pop("question_revealed", None)
     return city
 
 
@@ -105,6 +111,46 @@ def get_player_id():
     if "player_id" not in session:
         session["player_id"] = secrets.token_urlsafe(12)
     return session["player_id"]
+
+
+def get_current_question():
+    city = session.get("current_question")
+    if city and "question_id" not in city:
+        city = city.copy()
+        city["question_id"] = secrets.token_urlsafe(8)
+        session["current_question"] = city
+        session["question_resolved"] = False
+    return city
+
+
+def get_game_stats():
+    stats = session.get("game_stats")
+    if not stats:
+        stats = {"score": 0, "streak": 0, "best_streak": 0, "answered": 0}
+        session["game_stats"] = stats
+    return stats
+
+
+def record_answer(is_correct):
+    stats = get_game_stats().copy()
+    stats["answered"] += 1
+    points = 0
+    if is_correct:
+        points = 100 + min(stats["streak"] * 20, 100)
+        stats["streak"] += 1
+        stats["best_streak"] = max(stats["best_streak"], stats["streak"])
+        stats["score"] += points
+    else:
+        stats["streak"] = 0
+    session["game_stats"] = stats
+    return points
+
+
+def save_question_outcome(result=None, points=0, revealed=False):
+    session["question_resolved"] = True
+    session["question_result"] = result
+    session["question_points"] = points
+    session["question_revealed"] = revealed
 
 
 def start_question_prefetch():
@@ -176,6 +222,7 @@ def get_revealed_answer(city):
 
 def render_question(
     city, result=None, preload_url=None, revealed_answer=None, city_intro=None,
+    round_points=None,
 ):
     if city.get("is_dynamic"):
         return render_template(
@@ -183,6 +230,8 @@ def render_question(
             source_url=city["source_url"], credit=city["credit"], result=result,
             preload_url=preload_url,
             revealed_answer=revealed_answer, city_intro=city_intro,
+            round_points=round_points, stats=get_game_stats(),
+            question_id=city["question_id"],
         )
 
     fallback_url = f"/static/images/{city['image']}"
@@ -203,43 +252,79 @@ def render_question(
         source_url=source_url, credit=credit, result=result,
         preload_url=preload_url,
         revealed_answer=revealed_answer, city_intro=city_intro,
+        round_points=round_points, stats=get_game_stats(),
+        question_id=city["question_id"],
+    )
+
+
+def render_saved_outcome(city, preload_url=None):
+    if session.get("question_revealed"):
+        return render_question(
+            city,
+            preload_url=preload_url,
+            revealed_answer=get_revealed_answer(city),
+            city_intro=get_city_intro(city),
+            round_points=0,
+        )
+    return render_question(
+        city,
+        result=session.get("question_result"),
+        preload_url=preload_url,
+        round_points=session.get("question_points", 0),
     )
 
 
 @app.route("/")
 def home():
-    city = session.get("current_question") or get_new_question()
+    city = get_current_question() or get_new_question()
     start_question_prefetch()
+    if session.get("question_resolved"):
+        return render_saved_outcome(city)
     return render_question(city)
 
 
 @app.route("/check", methods=["POST"])
 def check():
-    city = session.get("current_question")
+    city = get_current_question()
     if not city:
         city = get_new_question()
         start_question_prefetch()
         return render_question(city)
+    if request.form.get("question_id") != city["question_id"]:
+        return render_saved_outcome(city) if session.get("question_resolved") else render_question(city)
+    if session.get("question_resolved"):
+        return render_saved_outcome(city)
     guess = request.form["guess"]
     accepted_answers = [city["answer"], *city.get("aliases", [])]
-    if guess.strip().casefold() in {answer.casefold() for answer in accepted_answers}:
+    is_correct = guess.strip().casefold() in {
+        answer.casefold() for answer in accepted_answers
+    }
+    points = record_answer(is_correct)
+    if is_correct:
         result = "✅ Correct!"
     else:
         result = f"❌ Wrong! Answer: {city['answer']}"
+    save_question_outcome(result=result, points=points)
     start_question_prefetch()
     next_city = get_prefetched_question()
     preload_url = next_city.get("image_url") if next_city else None
-    return render_question(city, result, preload_url)
+    return render_question(city, result, preload_url, round_points=points)
 
 
 @app.route("/reveal", methods=["POST"])
 def reveal_answer():
-    city = session.get("current_question")
+    city = get_current_question()
     if not city:
         city = get_new_question()
         start_question_prefetch()
         return render_question(city)
+    if request.form.get("question_id") != city["question_id"]:
+        return render_saved_outcome(city) if session.get("question_resolved") else render_question(city)
+    if session.get("question_resolved"):
+        return render_saved_outcome(city)
 
+    record_answer(False)
+    save_question_outcome(revealed=True)
     start_question_prefetch()
     intro = get_city_intro(city)
     next_city = get_prefetched_question()
@@ -249,12 +334,19 @@ def reveal_answer():
         preload_url=preload_url,
         revealed_answer=get_revealed_answer(city),
         city_intro=intro,
+        round_points=0,
     )
 
 
 @app.route("/next")
 def next_question():
     return render_question(get_next_question())
+
+
+@app.route("/reset", methods=["POST"])
+def reset_game():
+    session.clear()
+    return redirect(url_for("home"))
 
 
 if __name__ == "__main__":

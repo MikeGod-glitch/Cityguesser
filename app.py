@@ -21,6 +21,9 @@ _prefetch_lock = Lock()
 
 # Wikimedia Commons file names. See static/images/SOURCES.md for credits.
 commons = {
+    "Chicago": "Chicago Skyline - Dusk.JPG",
+    "London": "London Skyline from London Bridge at dusk.jpg",
+    "Tokyo": "Tokyo Skyline.jpg",
     "Paris": "The Eiffel Tower in Paris.jpg",
     "New York": "NYC skyline empire.jpg",
     "San Francisco": "GoldenGateBridge.jpg",
@@ -41,6 +44,9 @@ commons = {
 }
 
 credits = {
+    "Chicago": ("Alanthebox", "CC0 1.0"),
+    "London": ("Donnchadh H", "CC BY 2.0"),
+    "Tokyo": ("Ningyou", "Public domain"),
     "Paris": ("Jeong seolah", "CC0 1.0"),
     "New York": ("Matthew Wiebe", "CC0 1.0"),
     "San Francisco": ("Peter Craig", "Public domain"),
@@ -61,11 +67,6 @@ credits = {
 }
 
 cities = [
-    {"image": "Chicago.svg", "answer": "Chicago"},
-    {"image": "London.svg", "answer": "London"},
-    {"image": "Tokyo.svg", "answer": "Tokyo"},
-]
-cities += [
     {"image": f"{name.replace(' ', '')}.svg", "answer": name, "commons": filename}
     for name, filename in commons.items()
 ]

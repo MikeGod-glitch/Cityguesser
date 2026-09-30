@@ -1,15 +1,16 @@
 # City photo sources
 
-The 17 Commons-backed local questions use the Wikimedia Commons photos below. The game links to each
+The 20 local questions use the Wikimedia Commons photos below. The game links to each
 file description page, which includes the original file and its license. The SVG files
 in this folder are original offline illustrations; they are shown if a photo cannot load.
-Chicago, London, and Tokyo also use original SVG illustrations as their complete offline
-fallback images, so the repository does not need to carry large raster assets.
 Run `python tools/download_city_photos.py` on a network-enabled machine to save the
 photos here. The app automatically prefers those local JPEGs.
 
 | City | Author / uploader | License | Source |
 | --- | --- | --- | --- |
+| Chicago | Alanthebox | CC0 1.0 | [Photo](https://commons.wikimedia.org/wiki/File:Chicago_Skyline_-_Dusk.JPG) |
+| London | Donnchadh H | CC BY 2.0 | [Photo](https://commons.wikimedia.org/wiki/File:London_Skyline_from_London_Bridge_at_dusk.jpg) |
+| Tokyo | Ningyou | Public domain | [Photo](https://commons.wikimedia.org/wiki/File:Tokyo_Skyline.jpg) |
 | Paris | Jeong seolah | CC0 1.0 | [Photo](https://commons.wikimedia.org/wiki/File:The_Eiffel_Tower_in_Paris.jpg) |
 | New York | Matthew Wiebe | CC0 1.0 | [Photo](https://commons.wikimedia.org/wiki/File:NYC_skyline_empire.jpg) |
 | San Francisco | Peter Craig | Public domain | [Photo](https://commons.wikimedia.org/wiki/File:GoldenGateBridge.jpg) |

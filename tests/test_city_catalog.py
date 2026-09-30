@@ -29,9 +29,16 @@ class CityCatalogTests(unittest.TestCase):
 
     def test_local_fallback_is_a_catalog_subset_with_existing_images(self):
         catalog_names = {name for name, _aliases, _lat, _lon in CITIES}
+        self.assertEqual(20, len(game_app.commons))
+        self.assertEqual(
+            set(game_app.commons),
+            {city["answer"] for city in game_app.cities},
+        )
         for city in game_app.cities:
             with self.subTest(city=city["answer"]):
                 self.assertIn(city["answer"], catalog_names)
+                self.assertIn("commons", city)
+                self.assertIn(city["answer"], game_app.credits)
                 self.assertTrue((IMAGE_DIR / city["image"]).is_file())
                 ElementTree.parse(IMAGE_DIR / city["image"])
 
@@ -41,9 +48,7 @@ class CityCatalogTests(unittest.TestCase):
             self.assertTrue((IMAGE_DIR / f"{name}.svg").is_file())
 
     def test_homepage_and_answer_flow_work_offline(self):
-        fallback = {
-            "image": "Chicago.svg",
-            "answer": "Chicago",
+        fallback = game_app.cities[0] | {
             "aliases": ["芝加哥"],
             "is_dynamic": False,
         }

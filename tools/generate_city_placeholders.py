@@ -1,4 +1,4 @@
-"""Generate offline landmark illustrations for the 17 Commons photo questions."""
+"""Generate lightweight offline landmark illustrations for local fallback questions."""
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parents[1] / "static" / "images"
@@ -21,6 +21,9 @@ art = {
     "Toronto": '<path d="M180 620V370h150v250m55 0V300h145v320m320 0V330h140v290" fill="#4c657e"/><path d="M620 620 650 330l-15-45h80l-15 45 30 290Z" fill="#8aa3aa"/><ellipse cx="675" cy="300" rx="110" ry="30" fill="#bdced0"/><path d="M675 270V65" stroke="#8aa3aa" stroke-width="18"/><path d="M0 645h1200v105H0Z" fill="#4b8094"/>',
     "RiodeJaneiro": '<path d="M0 595q150-175 320-20 230-330 500-20 175-175 380 20v175H0Z" fill="#3a796f"/><path d="M555 385h90v180h-90Zm-185 25 230-55 230 55v40l-230-20-230 20Z" fill="#e6d4b0"/><circle cx="600" cy="310" r="58" fill="#e6d4b0"/><path d="M545 565h110" stroke="#b49b79" stroke-width="24"/>',
     "Istanbul": '<path d="M240 620V410h720v210Z" fill="#c7ad8b"/><path d="M335 410q265-310 530 0Z" fill="#a99588"/><path d="M490 260q110-140 220 0" fill="#a99588"/><path d="M145 620V255h55v365m800 0V255h55v365" fill="#b89d83"/><path d="M172 255V105m855 150V105" stroke="#b89d83" stroke-width="15"/><path d="M125 255h95m760 0h95" stroke="#d6bd9a" stroke-width="18"/>',
+    "Chicago": '<path d="M105 620V390h120v230m35 0V315h135v305m35 0V225h140v395m35 0V125h120v495m35 0V295h135v325m35 0V365h125v255" fill="#40566f"/><path d="M645 125V55m-35 110h70" stroke="#40566f" stroke-width="14"/><path d="M0 645h1200v105H0Z" fill="#477d94"/><g stroke="#f1d287" stroke-width="9"><path d="M140 440h55m105-75h55m115-90h60m95-85h55m105 155h60m90 70h55"/></g>',
+    "London": '<path d="M115 620V410h385v210m195 0V410h390v210" fill="#596579"/><path d="M505 620V235h190v385Z" fill="#b99162"/><path d="M535 235h130L600 130Z" fill="#6f5360"/><path d="M600 130V65" stroke="#6f5360" stroke-width="14"/><circle cx="600" cy="315" r="48" fill="#f2dfac" stroke="#6f5360" stroke-width="13"/><path d="M600 315v-31m0 31 25 18" stroke="#6f5360" stroke-width="9" stroke-linecap="round"/><path d="M0 650h1200v100H0Z" fill="#477c91"/>',
+    "Tokyo": '<path d="M130 620V390h150v230m35 0V315h135v305m420 0V350h140v270m35 0V420h110v200" fill="#4e6176"/><path d="M600 80 545 265h35l-65 170h58l-73 185h200l-73-185h58l-65-170h35Z" fill="#c65f55"/><path d="M548 265h104m-137 170h170m-185 185h200" stroke="#f3e0c0" stroke-width="15"/><path d="M0 650h1200v100H0Z" fill="#477b91"/>',
 }
 
 colors = [

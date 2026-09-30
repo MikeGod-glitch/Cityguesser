@@ -61,9 +61,9 @@ credits = {
 }
 
 cities = [
-    {"image": "Chicago.png", "answer": "Chicago"},
-    {"image": "London.png", "answer": "London"},
-    {"image": "Tokyo.png", "answer": "Tokyo"},
+    {"image": "Chicago.svg", "answer": "Chicago"},
+    {"image": "London.svg", "answer": "London"},
+    {"image": "Tokyo.svg", "answer": "Tokyo"},
 ]
 cities += [
     {"image": f"{name.replace(' ', '')}.svg", "answer": name, "commons": filename}

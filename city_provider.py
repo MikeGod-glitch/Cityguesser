@@ -73,6 +73,71 @@ CITIES = [
     ("Vancouver", ["温哥华"], 49.2827, -123.1207),
     ("Venice", ["威尼斯", "Venezia"], 45.4408, 12.3155),
     ("Vienna", ["维也纳", "Wien"], 48.2082, 16.3738),
+
+    # Curated expansion: globally recognizable cities with distinctive
+    # architecture, culture, or urban scenery. This is intentionally a game
+    # catalog rather than a population ranking.
+    # Asia
+    ("Delhi", ["德里", "新德里", "New Delhi", "Dilli"], 28.6139, 77.2090),
+    ("Agra", ["阿格拉"], 27.1767, 78.0081),
+    ("Jaipur", ["斋浦尔", "斋普尔"], 26.9124, 75.7873),
+    ("Varanasi", ["瓦拉纳西", "Benares", "Banaras", "Kashi"], 25.3176, 82.9739),
+    ("Kolkata", ["加尔各答", "Calcutta"], 22.5726, 88.3639),
+    ("Bengaluru", ["班加罗尔", "Bangalore"], 12.9716, 77.5946),
+    ("Kuala Lumpur", ["吉隆坡", "KL"], 3.1390, 101.6869),
+    ("Jakarta", ["雅加达", "Djakarta"], -6.2088, 106.8456),
+    ("Hanoi", ["河内", "Hà Nội"], 21.0278, 105.8342),
+    ("Ho Chi Minh City", ["胡志明市", "西贡", "Saigon", "Sài Gòn"], 10.8231, 106.6297),
+    ("Manila", ["马尼拉", "Maynila"], 14.5995, 120.9842),
+    ("Macau", ["澳门", "澳门特别行政区", "Macao"], 22.1987, 113.5439),
+    ("Xi'an", ["西安", "西安市", "Xian", "Xi’an"], 34.3416, 108.9398),
+    ("Chengdu", ["成都", "成都市"], 30.5728, 104.0668),
+    ("Busan", ["釜山", "釜山广域市", "Pusan"], 35.1796, 129.0756),
+
+    # Middle East and Africa
+    ("Jerusalem", ["耶路撒冷", "Yerushalayim", "Al-Quds"], 31.7683, 35.2137),
+    ("Abu Dhabi", ["阿布扎比", "Abu Zabi"], 24.4539, 54.3773),
+    ("Doha", ["多哈", "Ad-Dawhah"], 25.2854, 51.5310),
+    ("Marrakech", ["马拉喀什", "Marrakesh"], 31.6295, -7.9811),
+    ("Casablanca", ["卡萨布兰卡", "Dar al-Bayda"], 33.5731, -7.5898),
+    ("Alexandria", ["亚历山大", "Al-Iskandariyya"], 31.2001, 29.9187),
+    ("Nairobi", ["内罗毕"], -1.2921, 36.8219),
+    ("Johannesburg", ["约翰内斯堡", "Joburg", "Jozi"], -26.2041, 28.0473),
+    ("Lagos", ["拉各斯", "Eko"], 6.5244, 3.3792),
+    ("Zanzibar City", ["桑给巴尔市", "Zanzibar", "Stone Town"], -6.1659, 39.2026),
+
+    # Europe
+    ("Munich", ["慕尼黑", "München"], 48.1351, 11.5820),
+    ("Warsaw", ["华沙", "Warszawa"], 52.2297, 21.0122),
+    ("Krakow", ["克拉科夫", "Kraków"], 50.0647, 19.9450),
+    ("Dubrovnik", ["杜布罗夫尼克", "Ragusa"], 42.6507, 18.0944),
+    ("Helsinki", ["赫尔辛基", "Helsingfors"], 60.1699, 24.9384),
+    ("Oslo", ["奥斯陆", "Christiania", "Kristiania"], 59.9139, 10.7522),
+    ("Reykjavik", ["雷克雅未克", "Reykjavík"], 64.1466, -21.9426),
+    ("Zurich", ["苏黎世", "Zürich"], 47.3769, 8.5417),
+    ("Porto", ["波尔图", "Oporto"], 41.1579, -8.6291),
+    ("Seville", ["塞维利亚", "Sevilla"], 37.3891, -5.9845),
+
+    # North and Central America
+    ("Washington, D.C.", ["华盛顿", "华盛顿特区", "Washington DC", "Washington D.C.", "DC", "D.C."], 38.9072, -77.0369),
+    ("Miami", ["迈阿密"], 25.7617, -80.1918),
+    ("Las Vegas", ["拉斯维加斯", "Vegas"], 36.1699, -115.1398),
+    ("New Orleans", ["新奥尔良", "NOLA"], 29.9511, -90.0715),
+    ("Seattle", ["西雅图"], 47.6062, -122.3321),
+    ("Havana", ["哈瓦那", "La Habana"], 23.1136, -82.3666),
+    ("Panama City", ["巴拿马城", "巴拿马市", "Ciudad de Panamá"], 8.9824, -79.5199),
+    ("Quebec City", ["魁北克市", "Québec", "Ville de Québec"], 46.8139, -71.2080),
+
+    # South America
+    ("Sao Paulo", ["圣保罗", "São Paulo"], -23.5505, -46.6333),
+    ("Lima", ["利马"], -12.0464, -77.0428),
+    ("Bogota", ["波哥大", "Bogotá"], 4.7110, -74.0721),
+    ("Santiago", ["圣地亚哥", "Santiago de Chile"], -33.4489, -70.6693),
+    ("Cusco", ["库斯科", "Cuzco", "Qosqo"], -13.5319, -71.9675),
+    ("Cartagena", ["卡塔赫纳", "Cartagena de Indias"], 10.3910, -75.4794),
+
+    # Oceania
+    ("Brisbane", ["布里斯班"], -27.4698, 153.0251),
 ]
 
 _photo_cache = {}

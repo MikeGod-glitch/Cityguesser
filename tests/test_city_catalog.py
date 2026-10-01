@@ -4,6 +4,7 @@ from unittest.mock import patch
 from xml.etree import ElementTree
 
 import app as game_app
+import city_provider
 from city_provider import CITIES
 
 
@@ -59,6 +60,7 @@ class CityCatalogTests(unittest.TestCase):
             client = game_app.app.test_client()
             response = client.get("/")
             self.assertEqual(200, response.status_code)
+            self.assertIn(b"Question 1 / 10", response.data)
 
             with client.session_transaction() as session:
                 question_id = session["current_question"]["question_id"]
@@ -69,6 +71,126 @@ class CityCatalogTests(unittest.TestCase):
             )
             self.assertEqual(200, response.status_code)
             self.assertIn(b"Correct", response.data)
+
+    def test_dynamic_provider_excludes_recent_cities(self):
+        excluded = [name for name, _aliases, _lat, _lon in CITIES[:-1]]
+        photo = {
+            "title": "Brisbane skyline.jpg",
+            "image_url": "https://example.com/brisbane.jpg",
+            "source_url": "https://example.com/source",
+        }
+        with patch.object(city_provider, "_fetch_photos", return_value=[photo]), patch.object(
+            city_provider,
+            "_add_credit",
+            side_effect=lambda item: item | {"author": "Tester", "license": "CC0"},
+        ):
+            question = city_provider.get_random_question(excluded_cities=excluded)
+        self.assertEqual("Brisbane", question["answer"])
+
+
+class GameModeTests(unittest.TestCase):
+    def setUp(self):
+        game_app.app.config.update(TESTING=True, SECRET_KEY="test-secret")
+        self.client = game_app.app.test_client()
+
+    def seed_question(self, *, mode="challenge", answered=0, correct=0, score=0, streak=0, best=0):
+        city = game_app.cities[0] | {
+            "aliases": ["芝加哥"],
+            "is_dynamic": False,
+            "question_id": "question-token",
+        }
+        with self.client.session_transaction() as session:
+            session["game_mode"] = mode
+            session["game_stats"] = {
+                "score": score,
+                "streak": streak,
+                "best_streak": best,
+                "answered": answered,
+                "correct": correct,
+            }
+            session["current_question"] = city
+            session["question_resolved"] = False
+            session["recent_cities"] = [city["answer"]]
+        return city
+
+    def test_tenth_answer_shows_results_and_cannot_be_counted_twice(self):
+        self.seed_question(answered=9, correct=6, score=780, streak=1, best=3)
+        with patch.object(game_app, "start_question_prefetch", return_value=None):
+            response = self.client.post(
+                "/check",
+                data={"guess": "芝加哥", "question_id": "question-token"},
+            )
+            duplicate = self.client.post(
+                "/check",
+                data={"guess": "芝加哥", "question_id": "question-token"},
+            )
+
+        self.assertIn(b"Question 10 / 10", response.data)
+        self.assertIn(b"View results", response.data)
+        self.assertIn(b"View results", duplicate.data)
+        with self.client.session_transaction() as session:
+            self.assertEqual(10, session["game_stats"]["answered"])
+            self.assertEqual(7, session["game_stats"]["correct"])
+            self.assertEqual(900, session["game_stats"]["score"])
+
+        results = self.client.get("/results")
+        self.assertIn(b"Challenge complete", results.data)
+        self.assertIn(b"7 / 10", results.data)
+        self.assertIn(b"70%", results.data)
+        self.assertIn(b"Play again", results.data)
+
+    def test_tenth_question_does_not_prefetch_an_eleventh(self):
+        self.seed_question(answered=9, correct=6)
+        with patch.object(game_app._prefetch_executor, "submit") as submit:
+            response = self.client.get("/")
+        self.assertEqual(200, response.status_code)
+        self.assertIn(b"Question 10 / 10", response.data)
+        submit.assert_not_called()
+
+    def test_reveal_finishes_challenge_as_an_incorrect_answer(self):
+        self.seed_question(answered=9, correct=6, score=780, streak=2, best=3)
+        intro = {"text": "Chicago introduction", "source_url": None}
+        with patch.object(game_app, "get_city_intro", return_value=intro), patch.object(
+            game_app, "start_question_prefetch", return_value=None
+        ):
+            response = self.client.post(
+                "/reveal",
+                data={"question_id": "question-token"},
+            )
+        self.assertIn(b"View results", response.data)
+        with self.client.session_transaction() as session:
+            self.assertEqual(10, session["game_stats"]["answered"])
+            self.assertEqual(6, session["game_stats"]["correct"])
+            self.assertEqual(0, session["game_stats"]["streak"])
+
+    def test_endless_mode_continues_past_ten_questions(self):
+        self.seed_question(mode="endless", answered=10, correct=4, score=400)
+        with patch.object(game_app, "start_question_prefetch", return_value=None), patch.object(
+            game_app, "get_prefetched_question", return_value=None
+        ):
+            response = self.client.post(
+                "/check",
+                data={"guess": "Not Chicago", "question_id": "question-token"},
+            )
+        self.assertIn(b"Question 11", response.data)
+        self.assertIn(b"Endless", response.data)
+        self.assertIn(b"Next city", response.data)
+        self.assertNotIn(b"View results", response.data)
+
+    def test_reset_switches_modes_and_clears_round_state(self):
+        self.seed_question(answered=5, correct=3, score=340)
+        response = self.client.post("/reset", data={"mode": "endless"})
+        self.assertEqual(302, response.status_code)
+        with self.client.session_transaction() as session:
+            self.assertEqual("endless", session["game_mode"])
+            self.assertNotIn("game_stats", session)
+            self.assertNotIn("current_question", session)
+
+    def test_results_redirects_before_challenge_is_complete(self):
+        self.seed_question(answered=9, correct=6)
+        response = self.client.get("/results")
+        self.assertEqual(302, response.status_code)
+        self.assertTrue(response.headers["Location"].endswith("/"))
 
 
 if __name__ == "__main__":

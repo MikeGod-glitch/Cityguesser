@@ -15,6 +15,8 @@ app.secret_key = os.environ.get("CITY_GUESSER_SECRET", "city-game-development-se
 
 PREFETCH_WAIT_SECONDS = 0.3
 PREFETCH_TTL_SECONDS = 30 * 60
+CHALLENGE_LENGTH = 10
+GAME_MODES = {"challenge", "endless"}
 _prefetch_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="city-question")
 _prefetches = {}
 _prefetch_lock = Lock()
@@ -77,8 +79,12 @@ def get_local_question():
     if "remaining" not in session or not session["remaining"]:
         session["remaining"] = list(range(len(cities)))
 
-    remaining = session["remaining"]
-    idx = random.choice(remaining)
+    recent_cities = set(session.get("recent_cities", []))
+    remaining = list(session["remaining"])
+    eligible = [idx for idx in remaining if cities[idx]["answer"] not in recent_cities]
+    if not eligible:
+        eligible = remaining
+    idx = random.choice(eligible)
     remaining.remove(idx)
     session["remaining"] = remaining
     city = cities[idx].copy()
@@ -94,6 +100,9 @@ def remember_question(city):
     if city.get("image_id"):
         recent_images.append(city["image_id"])
         session["recent_images"] = recent_images[-10:]
+    recent_cities = list(session.get("recent_cities", []))
+    recent_cities.append(city["answer"])
+    session["recent_cities"] = recent_cities[-CHALLENGE_LENGTH:]
     session["current_question"] = city
     session["question_resolved"] = False
     session.pop("question_result", None)
@@ -104,7 +113,8 @@ def remember_question(city):
 
 def get_new_question():
     recent_images = session.get("recent_images", [])
-    city = get_random_question(recent_images) or get_local_question()
+    recent_cities = session.get("recent_cities", [])
+    city = get_random_question(recent_images, recent_cities) or get_local_question()
     return remember_question(city)
 
 
@@ -125,11 +135,48 @@ def get_current_question():
 
 
 def get_game_stats():
-    stats = session.get("game_stats")
-    if not stats:
-        stats = {"score": 0, "streak": 0, "best_streak": 0, "answered": 0}
+    defaults = {
+        "score": 0,
+        "streak": 0,
+        "best_streak": 0,
+        "answered": 0,
+        "correct": 0,
+    }
+    stats = {**defaults, **session.get("game_stats", {})}
+    if stats != session.get("game_stats"):
         session["game_stats"] = stats
     return stats
+
+
+def get_game_mode():
+    mode = session.get("game_mode", "challenge")
+    return mode if mode in GAME_MODES else "challenge"
+
+
+def is_challenge_complete(stats=None):
+    stats = stats or get_game_stats()
+    return get_game_mode() == "challenge" and stats["answered"] >= CHALLENGE_LENGTH
+
+
+def get_question_number(stats=None):
+    stats = stats or get_game_stats()
+    number = stats["answered"] if session.get("question_resolved") else stats["answered"] + 1
+    if get_game_mode() == "challenge":
+        return min(max(number, 1), CHALLENGE_LENGTH)
+    return max(number, 1)
+
+
+def get_game_summary(stats=None):
+    stats = stats or get_game_stats()
+    answered = stats["answered"]
+    accuracy = round(stats["correct"] * 100 / answered) if answered else 0
+    return {
+        "score": stats["score"],
+        "correct": stats["correct"],
+        "answered": answered,
+        "accuracy": accuracy,
+        "best_streak": stats["best_streak"],
+    }
 
 
 def record_answer(is_correct):
@@ -141,6 +188,7 @@ def record_answer(is_correct):
         stats["streak"] += 1
         stats["best_streak"] = max(stats["best_streak"], stats["streak"])
         stats["score"] += points
+        stats["correct"] += 1
     else:
         stats["streak"] = 0
     session["game_stats"] = stats
@@ -155,8 +203,13 @@ def save_question_outcome(result=None, points=0, revealed=False):
 
 
 def start_question_prefetch():
+    if is_challenge_complete() or (
+        get_game_mode() == "challenge" and get_question_number() >= CHALLENGE_LENGTH
+    ):
+        return
     player_id = get_player_id()
     recent_images = tuple(session.get("recent_images", []))
+    recent_cities = tuple(session.get("recent_cities", []))
     now = time.monotonic()
 
     with _prefetch_lock:
@@ -177,7 +230,7 @@ def start_question_prefetch():
                 pass
             _prefetches.pop(player_id, None)
 
-        future = _prefetch_executor.submit(get_random_question, recent_images)
+        future = _prefetch_executor.submit(get_random_question, recent_images, recent_cities)
         _prefetches[player_id] = (future, now)
 
 
@@ -210,6 +263,24 @@ def get_next_question():
     return city
 
 
+def start_new_game(mode="challenge"):
+    mode = mode if mode in GAME_MODES else "challenge"
+    player_id = session.get("player_id")
+    if player_id:
+        with _prefetch_lock:
+            entry = _prefetches.pop(player_id, None)
+        if entry:
+            entry[0].cancel()
+    session.clear()
+    session["game_mode"] = mode
+
+
+@app.before_request
+def ensure_game_mode():
+    if session.get("game_mode") not in GAME_MODES:
+        start_new_game("challenge")
+
+
 def get_revealed_answer(city):
     chinese_name = next(
         (
@@ -223,16 +294,28 @@ def get_revealed_answer(city):
 
 def render_question(
     city, result=None, preload_url=None, revealed_answer=None, city_intro=None,
-    round_points=None,
+    round_points=None, game_summary=False,
 ):
+    stats = get_game_stats()
+    context = {
+        "result": result,
+        "preload_url": preload_url,
+        "revealed_answer": revealed_answer,
+        "city_intro": city_intro,
+        "round_points": round_points,
+        "stats": stats,
+        "question_id": city["question_id"],
+        "game_mode": get_game_mode(),
+        "question_number": get_question_number(stats),
+        "question_total": CHALLENGE_LENGTH,
+        "challenge_complete": is_challenge_complete(stats),
+        "game_summary": game_summary,
+        "summary": get_game_summary(stats) if game_summary else None,
+    }
     if city.get("is_dynamic"):
         return render_template(
             "index.html", image_url=city["image_url"], fallback_url=None,
-            source_url=city["source_url"], credit=city["credit"], result=result,
-            preload_url=preload_url,
-            revealed_answer=revealed_answer, city_intro=city_intro,
-            round_points=round_points, stats=get_game_stats(),
-            question_id=city["question_id"],
+            source_url=city["source_url"], credit=city["credit"], **context,
         )
 
     fallback_url = f"/static/images/{city['image']}"
@@ -250,11 +333,7 @@ def render_question(
             image_url = f"https://commons.wikimedia.org/wiki/Special:FilePath/{quote(filename)}?width=1280"
     return render_template(
         "index.html", image_url=image_url, fallback_url=fallback_url,
-        source_url=source_url, credit=credit, result=result,
-        preload_url=preload_url,
-        revealed_answer=revealed_answer, city_intro=city_intro,
-        round_points=round_points, stats=get_game_stats(),
-        question_id=city["question_id"],
+        source_url=source_url, credit=credit, **context,
     )
 
 
@@ -306,8 +385,9 @@ def check():
     else:
         result = f"❌ Wrong! Answer: {city['answer']}"
     save_question_outcome(result=result, points=points)
-    start_question_prefetch()
-    next_city = get_prefetched_question()
+    if not is_challenge_complete():
+        start_question_prefetch()
+    next_city = get_prefetched_question() if not is_challenge_complete() else None
     preload_url = next_city.get("image_url") if next_city else None
     return render_question(city, result, preload_url, round_points=points)
 
@@ -326,9 +406,10 @@ def reveal_answer():
 
     record_answer(False)
     save_question_outcome(revealed=True)
-    start_question_prefetch()
+    if not is_challenge_complete():
+        start_question_prefetch()
     intro = get_city_intro(city)
-    next_city = get_prefetched_question()
+    next_city = get_prefetched_question() if not is_challenge_complete() else None
     preload_url = next_city.get("image_url") if next_city else None
     return render_question(
         city,
@@ -341,12 +422,24 @@ def reveal_answer():
 
 @app.route("/next")
 def next_question():
+    if is_challenge_complete():
+        return redirect(url_for("results"))
     return render_question(get_next_question())
+
+
+@app.route("/results")
+def results():
+    if not is_challenge_complete():
+        return redirect(url_for("home"))
+    city = get_current_question()
+    if not city:
+        return redirect(url_for("home"))
+    return render_question(city, game_summary=True)
 
 
 @app.route("/reset", methods=["POST"])
 def reset_game():
-    session.clear()
+    start_new_game(request.form.get("mode", "challenge"))
     return redirect(url_for("home"))
 
 

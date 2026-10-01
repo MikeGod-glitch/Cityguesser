@@ -33,12 +33,33 @@
 
             <section class="answer-panel" aria-labelledby="game-title">
                 <div class="panel-content">
+                    <p class="question-progress">
+                        {% if game_mode == 'challenge' %}
+                        Question {{ question_number }} / {{ question_total }}
+                        {% else %}
+                        Question {{ question_number }} <span>· Endless</span>
+                        {% endif %}
+                    </p>
                     <div class="scoreboard" aria-label="Current game score">
                         <div><span>Score</span><strong>{{ stats.score }}</strong></div>
                         <div><span>Streak</span><strong>{{ stats.streak }}</strong></div>
                         <div><span>Best</span><strong>{{ stats.best_streak }}</strong></div>
                         <div><span>Played</span><strong>{{ stats.answered }}</strong></div>
                     </div>
+
+                    {% if game_summary %}
+                    <h1 id="game-title">Challenge complete</h1>
+                    <div class="game-summary" role="status" aria-label="Challenge results">
+                        <div class="summary-stat summary-score"><span>Total score</span><strong>{{ summary.score }}</strong></div>
+                        <div class="summary-stat"><span>Correct answers</span><strong>{{ summary.correct }} / {{ summary.answered }}</strong></div>
+                        <div class="summary-stat"><span>Accuracy</span><strong>{{ summary.accuracy }}%</strong></div>
+                        <div class="summary-stat"><span>Best streak</span><strong>{{ summary.best_streak }}</strong></div>
+                    </div>
+                    <form class="mode-actions" action="/reset" method="post">
+                        <button class="primary-button" type="submit" name="mode" value="challenge">Play again</button>
+                        <button class="secondary-button" type="submit" name="mode" value="endless">Endless mode</button>
+                    </form>
+                    {% else %}
                     <h1 id="game-title">Which city is this?</h1>
 
                     {% if revealed_answer %}
@@ -53,7 +74,7 @@
                             {% endif %}
                         </div>
                     </div>
-                    <a class="primary-button next-button" href="/next">Next city</a>
+                    <a class="primary-button next-button" href="{{ url_for('results') if challenge_complete else url_for('next_question') }}">{{ 'View results' if challenge_complete else 'Next city' }}</a>
                     {% elif result %}
                     <div class="result-card {{ 'is-correct' if result.startswith('✅') else 'is-incorrect' }}" role="status">
                         <span class="result-icon" aria-hidden="true">{{ '✓' if result.startswith('✅') else '×' }}</span>
@@ -62,7 +83,7 @@
                             <p class="round-score">{{ '+' ~ round_points ~ ' points' if round_points else 'No points · streak reset' }}</p>
                         </div>
                     </div>
-                    <a class="primary-button next-button" href="/next">Next city</a>
+                    <a class="primary-button next-button" href="{{ url_for('results') if challenge_complete else url_for('next_question') }}">{{ 'View results' if challenge_complete else 'Next city' }}</a>
                     {% else %}
                     <form class="guess-form" action="/check" method="post">
                         <input type="hidden" name="question_id" value="{{ question_id }}">
@@ -78,8 +99,11 @@
                     </form>
                     {% endif %}
                     <form class="reset-form" action="/reset" method="post">
-                        <button class="reset-button" type="submit">Start a new game</button>
+                        <button class="reset-button" type="submit" name="mode" value="challenge">{{ 'Restart challenge' if game_mode == 'challenge' else 'Start a 10-question challenge' }}</button>
+                        <span aria-hidden="true">·</span>
+                        <button class="reset-button" type="submit" name="mode" value="endless">{{ 'Endless mode' if game_mode == 'challenge' else 'Restart endless mode' }}</button>
                     </form>
+                    {% endif %}
                 </div>
             </section>
         </main>

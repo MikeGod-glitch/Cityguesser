@@ -384,10 +384,14 @@ def get_city_intro(city):
     }
 
 
-def get_random_question(excluded_images=()):
+def get_random_question(excluded_images=(), excluded_cities=()):
     """Return a Commons-backed question, or None when the API is unavailable."""
     excluded = set(excluded_images)
-    for city in random.sample(CITIES, k=min(2, len(CITIES))):
+    excluded_names = set(excluded_cities)
+    available_cities = [city for city in CITIES if city[0] not in excluded_names]
+    if not available_cities:
+        available_cities = CITIES
+    for city in random.sample(available_cities, k=min(2, len(available_cities))):
         try:
             photos = [p.copy() for p in _fetch_photos(city) if p["title"] not in excluded]
             if not photos:

@@ -55,9 +55,6 @@
                         <div class="summary-stat"><span>Accuracy</span><strong>{{ summary.accuracy }}%</strong></div>
                         <div class="summary-stat"><span>Best streak</span><strong>{{ summary.best_streak }}</strong></div>
                     </div>
-                    {% if map_url %}
-                    <a class="secondary-button map-button" href="{{ map_url }}" target="_blank" rel="noopener noreferrer">View on map <span aria-hidden="true">↗</span></a>
-                    {% endif %}
                     <form class="mode-actions" action="/reset" method="post">
                         <button class="primary-button" type="submit" name="mode" value="challenge">Play again</button>
                         <button class="secondary-button" type="submit" name="mode" value="endless">Endless mode</button>
@@ -101,10 +98,10 @@
                     {% endif %}
                     {% if revealed_answer or result %}
                     <div class="result-actions{{ ' has-map' if map_url else '' }}">
+                        <a class="primary-button next-button" href="{{ url_for('results') if challenge_complete else url_for('next_question') }}">{{ 'View results' if challenge_complete else 'Next city' }}</a>
                         {% if map_url %}
                         <a class="secondary-button map-button" href="{{ map_url }}" target="_blank" rel="noopener noreferrer">View on map <span aria-hidden="true">↗</span></a>
                         {% endif %}
-                        <a class="primary-button next-button" href="{{ url_for('results') if challenge_complete else url_for('next_question') }}">{{ 'View results' if challenge_complete else 'Next city' }}</a>
                     </div>
                     {% endif %}
                     <form class="reset-form" action="/reset" method="post">

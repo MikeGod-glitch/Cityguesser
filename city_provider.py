@@ -1,5 +1,6 @@
 """Build lightweight, dynamic city questions from Wikimedia Commons."""
 
+import hashlib
 from html import unescape
 import json
 import random
@@ -19,6 +20,9 @@ CREDIT_CACHE_TTL_SECONDS = 24 * 60 * 60
 INTRO_CACHE_TTL_SECONDS = 24 * 60 * 60
 REQUEST_TIMEOUT_SECONDS = 4
 MIN_PHOTO_SCORE = 5
+MIN_PHOTO_PIXELS = 300_000
+PHOTO_CANDIDATE_LIMIT = 100
+DYNAMIC_CITY_ATTEMPTS = 4
 
 # Keeping this list local makes the game predictable and easy to maintain, while
 # Commons supplies many different photos for every city.
@@ -158,9 +162,11 @@ _urban_words = {
     "monument", "opera house", "town hall", "city hall", "skyscraper",
 }
 _unrelated_words = {
-    "interior", "indoor", "inside of", "hotel room", "bedroom",
+    "interior", "indoor", "inside", "inside of", "reception", "lobby",
+    "hotel room", "bedroom",
     "bathroom", "kitchen", "corridor", "ceiling", "furniture", "menu",
-    "dish", "food", "museum exhibit", "museum collection", "artwork",
+    "dish", "food", "museum exhibit", "museum collection", "exhibition",
+    "artwork",
     "manuscript", "portrait", "selfie", "passport photo", "close-up",
     "closeup", "macro photograph", "plaque", "inscription", "door detail",
     "window detail",
@@ -171,6 +177,20 @@ _nature_words = {
 }
 _quality_words = {"quality image", "featured picture", "valued image"}
 _html_tag = re.compile(r"<[^>]+>")
+
+
+def _photo_id(title):
+    """Return a compact stable id suitable for Flask's cookie session."""
+    return hashlib.sha256(title.encode("utf-8")).hexdigest()[:16]
+
+
+def _photo_family_key(title):
+    """Group filenames that differ mainly by counters, dates, or punctuation."""
+    title = re.sub(r"^file:|\.[a-z0-9]{2,5}$", "", title.casefold())
+    title = re.sub(r"\([^)]*\)|\[[^]]*\]", " ", title)
+    title = re.sub(r"\b\d+\b", " ", title)
+    words = re.findall(r"[^\W\d_]+", title, flags=re.UNICODE)
+    return " ".join(words)
 
 
 def _api_get(params, endpoint=COMMONS_API):
@@ -243,7 +263,7 @@ def _fetch_photos(city):
         "ggsprimary": "all",
         "ggsnamespace": 6,
         "ggsradius": 5000,
-        "ggslimit": 50,
+        "ggslimit": PHOTO_CANDIDATE_LIMIT,
         "ggscoord": f"{lat}|{lon}",
         "prop": "categories|imageinfo",
         "cllimit": "max",
@@ -252,7 +272,7 @@ def _fetch_photos(city):
         "iiurlwidth": 1280,
     })
 
-    photos = []
+    photo_families = {}
     for page in data.get("query", {}).get("pages", []):
         title = page.get("title", "")
         info = (page.get("imageinfo") or [{}])[0]
@@ -260,7 +280,7 @@ def _fetch_photos(city):
         height = info.get("height", 0)
         if info.get("mime") not in {"image/jpeg", "image/png", "image/webp"}:
             continue
-        if width < 800 or height < 450 or width / max(height, 1) < 1.15:
+        if width * height < MIN_PHOTO_PIXELS:
             continue
         if not info.get("thumburl"):
             continue
@@ -268,11 +288,21 @@ def _fetch_photos(city):
         score = _photo_score(city, title, categories, width, height)
         if score < MIN_PHOTO_SCORE:
             continue
-        photos.append({
+        photo = {
             "title": title,
             "image_url": info["thumburl"],
             "source_url": info.get("descriptionurl", ""),
-        })
+            "_quality": (score, width * height),
+        }
+        family = _photo_family_key(title)
+        existing = photo_families.get(family)
+        if not existing or photo["_quality"] > existing["_quality"]:
+            photo_families[family] = photo
+
+    photos = []
+    for photo in photo_families.values():
+        photo.pop("_quality", None)
+        photos.append(photo)
 
     with _cache_lock:
         _photo_cache[name] = {
@@ -391,9 +421,16 @@ def get_random_question(excluded_images=(), excluded_cities=()):
     available_cities = [city for city in CITIES if city[0] not in excluded_names]
     if not available_cities:
         available_cities = CITIES
-    for city in random.sample(available_cities, k=min(2, len(available_cities))):
+    for city in random.sample(
+        available_cities,
+        k=min(DYNAMIC_CITY_ATTEMPTS, len(available_cities)),
+    ):
         try:
-            photos = [p.copy() for p in _fetch_photos(city) if p["title"] not in excluded]
+            photos = [
+                p.copy() for p in _fetch_photos(city)
+                if p["title"] not in excluded
+                and _photo_id(p["title"]) not in excluded
+            ]
             if not photos:
                 continue
             photo = _add_credit(random.choice(photos))
@@ -404,7 +441,7 @@ def get_random_question(excluded_images=(), excluded_cities=()):
                 "image_url": photo["image_url"],
                 "source_url": photo["source_url"],
                 "credit": [photo.get("author", "Wikimedia contributor"), photo.get("license", "See source for license")],
-                "image_id": photo["title"],
+                "image_id": _photo_id(photo["title"]),
                 "is_dynamic": True,
             }
         except (OSError, ValueError, KeyError, json.JSONDecodeError):

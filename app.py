@@ -16,6 +16,7 @@ app.secret_key = os.environ.get("CITY_GUESSER_SECRET", "city-game-development-se
 PREFETCH_WAIT_SECONDS = 0.3
 PREFETCH_TTL_SECONDS = 30 * 60
 CHALLENGE_LENGTH = 10
+RECENT_HISTORY_LENGTH = 20
 GAME_MODES = {"challenge", "endless"}
 _prefetch_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="city-question")
 _prefetches = {}
@@ -90,6 +91,7 @@ def get_local_question():
     session["remaining"] = remaining
     city = cities[idx].copy()
     city["aliases"] = city_aliases.get(city["answer"], [])
+    city["image_id"] = f"local:{city['answer']}"
     city["is_dynamic"] = False
     return city
 
@@ -100,10 +102,10 @@ def remember_question(city):
     recent_images = list(session.get("recent_images", []))
     if city.get("image_id"):
         recent_images.append(city["image_id"])
-        session["recent_images"] = recent_images[-10:]
+        session["recent_images"] = recent_images[-RECENT_HISTORY_LENGTH:]
     recent_cities = list(session.get("recent_cities", []))
     recent_cities.append(city["answer"])
-    session["recent_cities"] = recent_cities[-CHALLENGE_LENGTH:]
+    session["recent_cities"] = recent_cities[-RECENT_HISTORY_LENGTH:]
     session["current_question"] = city
     session["question_resolved"] = False
     session.pop("question_result", None)
@@ -272,8 +274,14 @@ def start_new_game(mode="challenge"):
             entry = _prefetches.pop(player_id, None)
         if entry:
             entry[0].cancel()
+    recent_images = list(session.get("recent_images", []))[-RECENT_HISTORY_LENGTH:]
+    recent_cities = list(session.get("recent_cities", []))[-RECENT_HISTORY_LENGTH:]
     session.clear()
     session["game_mode"] = mode
+    if recent_images:
+        session["recent_images"] = recent_images
+    if recent_cities:
+        session["recent_cities"] = recent_cities
 
 
 @app.before_request

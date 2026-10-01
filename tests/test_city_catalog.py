@@ -77,6 +77,7 @@ class CityCatalogTests(unittest.TestCase):
             self.assertIn(b'target="_blank" rel="noopener noreferrer"', response.data)
             self.assertIn(b'class="result-actions has-map"', response.data)
             self.assertIn(b'class="secondary-button map-button"', response.data)
+            self.assertLess(response.data.index(b"Next city"), response.data.index(b"View on map"))
 
     def test_map_url_uses_catalog_coordinates(self):
         url = game_app.get_map_url({"answer": "Chicago"})
@@ -101,6 +102,115 @@ class CityCatalogTests(unittest.TestCase):
         ):
             question = city_provider.get_random_question(excluded_cities=excluded)
         self.assertEqual("Brisbane", question["answer"])
+
+    def test_dynamic_provider_tries_four_cities_before_falling_back(self):
+        selected = CITIES[:4]
+        photo = {
+            "title": "City skyline.jpg",
+            "image_url": "https://example.com/city.jpg",
+            "source_url": "https://example.com/source",
+        }
+        with patch.object(city_provider.random, "sample", return_value=selected), patch.object(
+            city_provider, "_fetch_photos", side_effect=[[], [], [], [photo]]
+        ) as fetch, patch.object(
+            city_provider,
+            "_add_credit",
+            side_effect=lambda item: item | {"author": "Tester", "license": "CC0"},
+        ):
+            question = city_provider.get_random_question()
+        self.assertEqual(selected[-1][0], question["answer"])
+        self.assertEqual(4, fetch.call_count)
+
+    def test_similar_photo_filenames_share_a_family(self):
+        self.assertEqual(
+            city_provider._photo_family_key("File:Tejas Express 123 (2024).jpg"),
+            city_provider._photo_family_key("File:Tejas Express 987 (2023).jpg"),
+        )
+
+    def test_fetch_photos_expands_and_deduplicates_candidate_pool(self):
+        city = next(city for city in CITIES if city[0] == "Delhi")
+        pages = []
+        for number in (123, 987):
+            pages.append({
+                "title": f"File:Delhi city street {number} (2024).jpg",
+                "categories": [{"title": "Streets in Delhi"}],
+                "imageinfo": [{
+                    "width": 1600,
+                    "height": 900,
+                    "mime": "image/jpeg",
+                    "thumburl": f"https://example.com/{number}.jpg",
+                    "descriptionurl": "https://example.com/source",
+                }],
+            })
+        with city_provider._cache_lock:
+            city_provider._photo_cache.pop("Delhi", None)
+        try:
+            with patch.object(
+                city_provider,
+                "_api_get",
+                return_value={"query": {"pages": pages}},
+            ) as api_get:
+                photos = city_provider._fetch_photos(city)
+            self.assertEqual(1, len(photos))
+            self.assertEqual(
+                city_provider.PHOTO_CANDIDATE_LIMIT,
+                api_get.call_args.args[0]["ggslimit"],
+            )
+        finally:
+            with city_provider._cache_lock:
+                city_provider._photo_cache.pop("Delhi", None)
+
+    def test_fetch_photos_accepts_portraits_but_rejects_tiny_images(self):
+        city = next(city for city in CITIES if city[0] == "Tokyo")
+
+        def page(title, width, height):
+            return {
+                "title": title,
+                "categories": [{"title": "Streets in Tokyo"}],
+                "imageinfo": [{
+                    "width": width,
+                    "height": height,
+                    "mime": "image/jpeg",
+                    "thumburl": f"https://example.com/{title}.jpg",
+                    "descriptionurl": "https://example.com/source",
+                }],
+            }
+
+        pages = [
+            page("File:Tokyo vertical street.jpg", 480, 900),
+            page("File:Tokyo tiny street.jpg", 400, 400),
+        ]
+        with city_provider._cache_lock:
+            city_provider._photo_cache.pop("Tokyo", None)
+        try:
+            with patch.object(
+                city_provider,
+                "_api_get",
+                return_value={"query": {"pages": pages}},
+            ):
+                photos = city_provider._fetch_photos(city)
+            self.assertEqual(
+                ["File:Tokyo vertical street.jpg"],
+                [photo["title"] for photo in photos],
+            )
+        finally:
+            with city_provider._cache_lock:
+                city_provider._photo_cache.pop("Tokyo", None)
+
+    def test_dynamic_provider_returns_none_when_commons_fails(self):
+        with patch.object(city_provider, "_fetch_photos", side_effect=OSError):
+            self.assertIsNone(city_provider.get_random_question())
+
+    def test_indoor_reception_photo_is_rejected(self):
+        city = next(city for city in CITIES if city[0] == "Lagos")
+        score = city_provider._photo_score(
+            city,
+            "Lagos museum reception.jpg",
+            ["City buildings in Lagos"],
+            1600,
+            900,
+        )
+        self.assertEqual(0, score)
 
 
 class GameModeTests(unittest.TestCase):
@@ -153,7 +263,7 @@ class GameModeTests(unittest.TestCase):
         self.assertIn(b"7 / 10", results.data)
         self.assertIn(b"70%", results.data)
         self.assertIn(b"Play again", results.data)
-        self.assertIn(b"View on map", results.data)
+        self.assertNotIn(b"View on map", results.data)
 
     def test_tenth_question_does_not_prefetch_an_eleventh(self):
         self.seed_question(answered=9, correct=6)
@@ -196,12 +306,23 @@ class GameModeTests(unittest.TestCase):
 
     def test_reset_switches_modes_and_clears_round_state(self):
         self.seed_question(answered=5, correct=3, score=340)
+        with self.client.session_transaction() as session:
+            session["recent_images"] = [f"image-{index}" for index in range(25)]
+            session["recent_cities"] = [f"City {index}" for index in range(25)]
         response = self.client.post("/reset", data={"mode": "endless"})
         self.assertEqual(302, response.status_code)
         with self.client.session_transaction() as session:
             self.assertEqual("endless", session["game_mode"])
             self.assertNotIn("game_stats", session)
             self.assertNotIn("current_question", session)
+            self.assertEqual(
+                [f"image-{index}" for index in range(5, 25)],
+                session["recent_images"],
+            )
+            self.assertEqual(
+                [f"City {index}" for index in range(5, 25)],
+                session["recent_cities"],
+            )
 
     def test_results_redirects_before_challenge_is_complete(self):
         self.seed_question(answered=9, correct=6)

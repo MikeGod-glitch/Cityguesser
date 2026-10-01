@@ -105,7 +105,7 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 .secondary-button:active { transform: translateY(0); }
 .secondary-button:focus-visible { outline: 3px solid #eeb16d; outline-offset: 4px; }
 .secondary-button:disabled { cursor: wait; opacity: .7; transform: none; }
-.result-card { display: flex; align-items: center; gap: 15px; max-width: 420px; margin-bottom: 16px; padding: 21px; border: 1px solid rgba(142, 214, 177, .4); border-radius: 9px; background: rgba(64, 138, 101, .15); animation: rise-in .35s ease both; }
+.result-card { display: flex; align-items: center; gap: 15px; max-width: 520px; margin-bottom: 16px; padding: 21px; border: 1px solid rgba(142, 214, 177, .4); border-radius: 9px; background: rgba(64, 138, 101, .15); animation: rise-in .35s ease both; }
 .result-card.is-incorrect { border-color: rgba(240, 158, 130, .42); background: rgba(144, 75, 67, .16); }
 .result-card.is-revealed { max-width: 520px; align-items: flex-start; border-color: rgba(238, 177, 109, .45); background: rgba(167, 112, 55, .14); }
 .result-icon { flex: 0 0 30px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: #8ed6b1; color: #0c2922; font-size: 1.15rem; font-weight: 800; line-height: 1; }

@@ -61,6 +61,7 @@ class CityCatalogTests(unittest.TestCase):
             response = client.get("/")
             self.assertEqual(200, response.status_code)
             self.assertIn(b"Question 1 / 10", response.data)
+            self.assertNotIn(b"View on map", response.data)
 
             with client.session_transaction() as session:
                 question_id = session["current_question"]["question_id"]
@@ -71,6 +72,20 @@ class CityCatalogTests(unittest.TestCase):
             )
             self.assertEqual(200, response.status_code)
             self.assertIn(b"Correct", response.data)
+            self.assertIn(b"View on map", response.data)
+            self.assertIn(b"openstreetmap.org", response.data)
+            self.assertIn(b'target="_blank" rel="noopener noreferrer"', response.data)
+            self.assertIn(b'class="result-actions has-map"', response.data)
+            self.assertIn(b'class="secondary-button map-button"', response.data)
+
+    def test_map_url_uses_catalog_coordinates(self):
+        url = game_app.get_map_url({"answer": "Chicago"})
+        self.assertEqual(
+            "https://www.openstreetmap.org/?mlat=41.8781&mlon=-87.6298"
+            "#map=11/41.8781/-87.6298",
+            url,
+        )
+        self.assertIsNone(game_app.get_map_url({"answer": "Unknown City"}))
 
     def test_dynamic_provider_excludes_recent_cities(self):
         excluded = [name for name, _aliases, _lat, _lon in CITIES[:-1]]
@@ -138,6 +153,7 @@ class GameModeTests(unittest.TestCase):
         self.assertIn(b"7 / 10", results.data)
         self.assertIn(b"70%", results.data)
         self.assertIn(b"Play again", results.data)
+        self.assertIn(b"View on map", results.data)
 
     def test_tenth_question_does_not_prefetch_an_eleventh(self):
         self.seed_question(answered=9, correct=6)
@@ -158,6 +174,7 @@ class GameModeTests(unittest.TestCase):
                 data={"question_id": "question-token"},
             )
         self.assertIn(b"View results", response.data)
+        self.assertIn(b"View on map", response.data)
         with self.client.session_transaction() as session:
             self.assertEqual(10, session["game_stats"]["answered"])
             self.assertEqual(6, session["game_stats"]["correct"])

@@ -115,7 +115,11 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 .round-score { margin: 5px 0 0; color: #eeb16d; font-size: .78rem; font-weight: 700; }
 .city-intro { margin: 12px 0 10px; color: #cad8d5; font-size: .9rem; line-height: 1.7; }
 .intro-source { color: #eeb16d; font-size: .76rem; text-underline-offset: 3px; }
-.next-button { max-width: 420px; }
+.next-button { max-width: 520px; }
+.map-button { max-width: 520px; margin-bottom: 16px; text-decoration: none; }
+.result-actions { display: grid; grid-template-columns: 1fr; gap: 12px; max-width: 520px; }
+.result-actions.has-map { grid-template-columns: 1fr 1fr; }
+.result-actions .map-button { margin-bottom: 0; }
 .game-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; max-width: 520px; margin-bottom: 16px; overflow: hidden; border: 1px solid rgba(238, 177, 109, .34); border-radius: 9px; background: rgba(217, 234, 221, .1); }
 .summary-stat { display: flex; min-height: 104px; flex-direction: column; justify-content: center; gap: 6px; padding: 18px 20px; background: #142831; }
 .summary-stat span { color: #92a8aa; font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -156,6 +160,7 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
     .scoreboard span { font-size: .58rem; }
     .input-wrap input, .primary-button, .secondary-button { min-height: 57px; height: 57px; }
     .form-actions { grid-template-columns: 1fr; }
+    .result-actions.has-map { grid-template-columns: 1fr; }
     .mode-actions { grid-template-columns: 1fr; }
     .summary-stat { min-height: 88px; padding: 15px; }
     .summary-stat strong { font-size: 1.3rem; }

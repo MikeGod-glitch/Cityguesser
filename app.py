@@ -73,6 +73,7 @@ cities = [
     for name, filename in commons.items()
 ]
 city_aliases = {name: aliases for name, aliases, _lat, _lon in CITIES}
+city_coordinates = {name: (lat, lon) for name, _aliases, lat, lon in CITIES}
 
 
 def get_local_question():
@@ -292,6 +293,17 @@ def get_revealed_answer(city):
     return f"{chinese_name} / {city['answer']}" if chinese_name else city["answer"]
 
 
+def get_map_url(city):
+    coordinates = city_coordinates.get(city["answer"])
+    if not coordinates:
+        return None
+    latitude, longitude = coordinates
+    return (
+        "https://www.openstreetmap.org/"
+        f"?mlat={latitude}&mlon={longitude}#map=11/{latitude}/{longitude}"
+    )
+
+
 def render_question(
     city, result=None, preload_url=None, revealed_answer=None, city_intro=None,
     round_points=None, game_summary=False,
@@ -311,6 +323,7 @@ def render_question(
         "challenge_complete": is_challenge_complete(stats),
         "game_summary": game_summary,
         "summary": get_game_summary(stats) if game_summary else None,
+        "map_url": get_map_url(city),
     }
     if city.get("is_dynamic"):
         return render_template(

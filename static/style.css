@@ -86,6 +86,20 @@ button, input { font: inherit; }
 .scoreboard strong { color: #f3f3eb; font-size: 1.08rem; font-variant-numeric: tabular-nums; }
 h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem); font-weight: 720; letter-spacing: -.065em; line-height: 1.06; }
 .guess-form { max-width: 520px; }
+.answer-mode-form { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; max-width: 520px; padding: 4px; border: 1px solid #456068; border-radius: 8px; }
+.answer-mode-form button { min-height: 40px; padding: 8px; border: 0; border-radius: 5px; background: transparent; color: #a9bcba; cursor: pointer; font-size: .8rem; font-weight: 700; }
+.answer-mode-form button[aria-pressed="true"] { background: #29454c; color: #fff; cursor: default; }
+.answer-mode-form button:focus-visible { outline: 2px solid #eeb16d; }
+.mode-hint { max-width: 520px; margin: 7px 0 20px; color: #92a8aa; font-size: .7rem; }
+.choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 520px; margin-bottom: 14px; }
+.choice-button { justify-content: flex-start; gap: 10px; padding: 14px; text-align: left; }
+.choice-name { flex: 1; overflow-wrap: anywhere; }
+.choice-flag { flex-shrink: 0; object-fit: contain; }
+.choice-button:disabled { opacity: 1; cursor: default; transform: none; }
+.choice-button:disabled:hover { border-color: #557078; background: #152a33; }
+.choice-button.choice-correct { border-color: #8ed6b1; background: #214b3b; }
+.choice-button.choice-wrong { border-color: #f09e82; background: #593732; }
+.choice-status { font-weight: 800; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .input-wrap { position: relative; margin-bottom: 13px; }
 .input-wrap input { display: block; width: 100%; height: 61px; padding: 0 20px 0 53px; border: 1px solid #456068; border-radius: 8px; outline: 0; background: #152a33; color: #fff; font-size: 1rem; transition: border-color .2s, box-shadow .2s, background .2s; }
@@ -160,6 +174,8 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
     .scoreboard span { font-size: .58rem; }
     .input-wrap input, .primary-button, .secondary-button { min-height: 57px; height: 57px; }
     .form-actions { grid-template-columns: 1fr; }
+    .choice-grid { grid-template-columns: 1fr; }
+    .choice-button { height: auto; }
     .result-actions.has-map { grid-template-columns: 1fr; }
     .mode-actions { grid-template-columns: 1fr; }
     .summary-stat { min-height: 88px; padding: 15px; }

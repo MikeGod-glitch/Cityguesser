@@ -1,3 +1,16 @@
+{% macro choice_grid(interactive) %}
+<div class="choice-grid" aria-label="City options">
+    {% for choice in choices %}
+    <button class="secondary-button choice-button{{ ' choice-correct' if choice_answer == choice.name else ' choice-wrong' if selected_choice == choice.name else '' }}"
+            type="{{ 'submit' if interactive else 'button' }}"{% if interactive %} name="guess" value="{{ choice.name }}"{% else %} disabled{% endif %}>
+        <span class="choice-name">{{ choice.name }}</span>
+        <img class="choice-flag" src="{{ url_for('static', filename='flags/' ~ choice.flag ~ '.svg') }}" alt="{{ choice.country }} flag" width="28" height="21">
+        {% if choice_answer == choice.name %}<span class="choice-status">✓ <span class="sr-only">Correct answer</span></span>
+        {% elif selected_choice == choice.name %}<span class="choice-status">× <span class="sr-only">Your answer, incorrect</span></span>{% endif %}
+    </button>
+    {% endfor %}
+</div>
+{% endmacro %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -47,6 +60,13 @@
                         <div><span>Played</span><strong>{{ stats.answered }}</strong></div>
                     </div>
 
+                    <form class="answer-mode-form" action="/reset" method="post" aria-label="Answer mode">
+                        <input type="hidden" name="mode" value="{{ game_mode }}">
+                        <button type="submit" name="answer_mode" value="text" aria-pressed="{{ 'true' if answer_mode == 'text' else 'false' }}"{% if answer_mode == 'text' %} disabled{% endif %}>Type answer</button>
+                        <button type="submit" name="answer_mode" value="choice" aria-pressed="{{ 'true' if answer_mode == 'choice' else 'false' }}"{% if answer_mode == 'choice' %} disabled{% endif %}>Multiple choice</button>
+                    </form>
+                    <p class="mode-hint">Switching answer mode starts a new game.</p>
+
                     {% if game_summary %}
                     <h1 id="game-title">Challenge complete</h1>
                     <div class="game-summary" role="status" aria-label="Challenge results">
@@ -85,6 +105,10 @@
                     {% else %}
                     <form class="guess-form" action="/check" method="post">
                         <input type="hidden" name="question_id" value="{{ question_id }}">
+                        {% if answer_mode == 'choice' %}
+                        {{ choice_grid(true) }}
+                        <button class="secondary-button reveal-button" type="submit" formaction="/reveal" formmethod="post" formnovalidate>I don't know</button>
+                        {% else %}
                         <label class="sr-only" for="city-guess">City name</label>
                         <div class="input-wrap">
                             <span class="input-pin" aria-hidden="true"></span>
@@ -94,9 +118,11 @@
                             <button class="primary-button" type="submit">Submit</button>
                             <button class="secondary-button reveal-button" type="submit" formaction="/reveal" formmethod="post" formnovalidate>I don't know</button>
                         </div>
+                        {% endif %}
                     </form>
                     {% endif %}
                     {% if revealed_answer or result %}
+                    {% if answer_mode == 'choice' %}{{ choice_grid(false) }}{% endif %}
                     <div class="result-actions{{ ' has-map' if map_url else '' }}">
                         <a class="primary-button next-button" href="{{ url_for('results') if challenge_complete else url_for('next_question') }}">{{ 'View results' if challenge_complete else 'Next city' }}</a>
                         {% if map_url %}

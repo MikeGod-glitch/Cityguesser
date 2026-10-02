@@ -9,6 +9,7 @@ import secrets
 import time
 
 from city_provider import CITIES, get_city_intro, get_random_question
+from city_choices import CITY_PROFILES, generate_choices
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("CITY_GUESSER_SECRET", "city-game-development-secret")
@@ -18,6 +19,7 @@ PREFETCH_TTL_SECONDS = 30 * 60
 CHALLENGE_LENGTH = 10
 RECENT_HISTORY_LENGTH = 20
 GAME_MODES = {"challenge", "endless"}
+ANSWER_MODES = {"text", "choice"}
 _prefetch_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="city-question")
 _prefetches = {}
 _prefetch_lock = Lock()
@@ -99,6 +101,8 @@ def get_local_question():
 def remember_question(city):
     city = city.copy()
     city["question_id"] = secrets.token_urlsafe(8)
+    if get_answer_mode() == "choice":
+        city["choices"] = generate_choices(city["answer"])
     recent_images = list(session.get("recent_images", []))
     if city.get("image_id"):
         recent_images.append(city["image_id"])
@@ -111,6 +115,7 @@ def remember_question(city):
     session.pop("question_result", None)
     session.pop("question_points", None)
     session.pop("question_revealed", None)
+    session.pop("selected_choice", None)
     return city
 
 
@@ -154,6 +159,11 @@ def get_game_stats():
 def get_game_mode():
     mode = session.get("game_mode", "challenge")
     return mode if mode in GAME_MODES else "challenge"
+
+
+def get_answer_mode():
+    mode = session.get("answer_mode", "text")
+    return mode if mode in ANSWER_MODES else "text"
 
 
 def is_challenge_complete(stats=None):
@@ -266,8 +276,10 @@ def get_next_question():
     return city
 
 
-def start_new_game(mode="challenge"):
+def start_new_game(mode="challenge", answer_mode=None):
     mode = mode if mode in GAME_MODES else "challenge"
+    answer_mode = get_answer_mode() if answer_mode is None else answer_mode
+    answer_mode = answer_mode if answer_mode in ANSWER_MODES else "text"
     player_id = session.get("player_id")
     if player_id:
         with _prefetch_lock:
@@ -278,6 +290,7 @@ def start_new_game(mode="challenge"):
     recent_cities = list(session.get("recent_cities", []))[-RECENT_HISTORY_LENGTH:]
     session.clear()
     session["game_mode"] = mode
+    session["answer_mode"] = answer_mode
     if recent_images:
         session["recent_images"] = recent_images
     if recent_cities:
@@ -326,6 +339,13 @@ def render_question(
         "stats": stats,
         "question_id": city["question_id"],
         "game_mode": get_game_mode(),
+        "answer_mode": get_answer_mode(),
+        "choices": [
+            {"name": name, **CITY_PROFILES[name]}
+            for name in city.get("choices", [])
+        ],
+        "choice_answer": city["answer"] if session.get("question_resolved") else None,
+        "selected_choice": session.get("selected_choice"),
         "question_number": get_question_number(stats),
         "question_total": CHALLENGE_LENGTH,
         "challenge_complete": is_challenge_complete(stats),
@@ -395,7 +415,11 @@ def check():
         return render_saved_outcome(city) if session.get("question_resolved") else render_question(city)
     if session.get("question_resolved"):
         return render_saved_outcome(city)
-    guess = request.form["guess"]
+    guess = request.form.get("guess", "")
+    if get_answer_mode() == "choice":
+        if guess not in city.get("choices", []):
+            return render_question(city), 400
+        session["selected_choice"] = guess
     accepted_answers = [city["answer"], *city.get("aliases", [])]
     is_correct = guess.strip().casefold() in {
         answer.casefold() for answer in accepted_answers
@@ -460,7 +484,10 @@ def results():
 
 @app.route("/reset", methods=["POST"])
 def reset_game():
-    start_new_game(request.form.get("mode", "challenge"))
+    start_new_game(
+        request.form.get("mode", get_game_mode()),
+        request.form.get("answer_mode"),
+    )
     return redirect(url_for("home"))
 
 

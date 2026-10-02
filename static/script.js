@@ -1,3 +1,24 @@
+const themeToggle = document.querySelector('.theme-toggle');
+
+function updateThemeButton() {
+    const isLight = document.documentElement.dataset.theme === 'light';
+    themeToggle.querySelector('.theme-icon').textContent = isLight ? '☾' : '☀';
+    themeToggle.querySelector('.theme-label').textContent = isLight ? 'Dark' : 'Light';
+    themeToggle.setAttribute('aria-label', `Switch to ${isLight ? 'dark' : 'light'} mode`);
+    document.querySelector('meta[name="theme-color"]').content = isLight ? '#f6f5f0' : '#0b1720';
+}
+
+if (themeToggle) {
+    updateThemeButton();
+    themeToggle.addEventListener('click', () => {
+        const theme = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+        document.documentElement.dataset.theme = theme;
+        try { localStorage.setItem('city-guesser-theme', theme); } catch (_) { /* Keep switching available. */ }
+        updateThemeButton();
+    });
+    window.addEventListener('pageshow', updateThemeButton);
+}
+
 const guessForm = document.querySelector('.guess-form');
 
 if (guessForm) {

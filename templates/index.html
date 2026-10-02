@@ -31,6 +31,12 @@
                 <span class="brand-mark" aria-hidden="true"><span></span></span>
                 <span class="brand-name">CITY<span>GUESSER</span></span>
             </a>
+            {% if not game_summary %}
+            <form class="game-mode-controls" action="/reset" method="post" aria-label="Game length">
+                <button class="game-mode-button" type="submit" name="mode" value="challenge">{{ 'Restart challenge' if game_mode == 'challenge' else 'Start a 10-question challenge' }}</button>
+                <button class="game-mode-button" type="submit" name="mode" value="endless">{{ 'Endless mode' if game_mode == 'challenge' else 'Restart endless mode' }}</button>
+            </form>
+            {% endif %}
         </header>
 
         <main class="game-layout">
@@ -130,11 +136,6 @@
                         {% endif %}
                     </div>
                     {% endif %}
-                    <form class="reset-form" action="/reset" method="post">
-                        <button class="reset-button" type="submit" name="mode" value="challenge">{{ 'Restart challenge' if game_mode == 'challenge' else 'Start a 10-question challenge' }}</button>
-                        <span aria-hidden="true">·</span>
-                        <button class="reset-button" type="submit" name="mode" value="endless">{{ 'Endless mode' if game_mode == 'challenge' else 'Restart endless mode' }}</button>
-                    </form>
                     {% endif %}
                 </div>
             </section>

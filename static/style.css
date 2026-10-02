@@ -140,11 +140,10 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 .summary-stat strong { color: #f3f3eb; font-size: 1.55rem; font-variant-numeric: tabular-nums; }
 .summary-score strong { color: #eeb16d; }
 .mode-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 520px; }
-.reset-form { max-width: 420px; margin-top: 18px; text-align: center; }
-.reset-form span { color: #587078; font-size: .7rem; }
-.reset-button { padding: 4px 6px; border: 0; background: transparent; color: #92a8aa; cursor: pointer; font-size: .72rem; text-decoration: underline; text-decoration-color: rgba(146, 168, 170, .45); text-underline-offset: 3px; }
-.reset-button:hover { color: #fff; }
-.reset-button:focus-visible { outline: 2px solid #eeb16d; outline-offset: 3px; }
+.game-mode-controls { display: flex; gap: 10px; margin-left: auto; }
+.game-mode-button { min-height: 42px; padding: 10px 16px; border: 1px solid #456068; border-radius: 8px; background: transparent; color: #cad8d5; cursor: pointer; font-size: .78rem; font-weight: 700; line-height: 1.4; transition: border-color .2s, background .2s; }
+.game-mode-button:hover { border-color: #eeb16d; background: #152a33; color: #fff; }
+.game-mode-button:focus-visible { outline: 2px solid #eeb16d; outline-offset: 3px; }
 
 @keyframes rise-in { from { opacity: 0; transform: translateY(13px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -159,7 +158,9 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 
 @media (max-width: 600px) {
     .page-shell { width: min(100% - 28px, 520px); }
-    .site-header { min-height: 72px; }
+    .site-header { min-height: 72px; flex-wrap: wrap; gap: 16px; padding: 20px 0; }
+    .game-mode-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; margin-left: 0; }
+    .game-mode-button { padding: 10px; overflow-wrap: anywhere; }
     .brand { gap: 9px; }
     .brand-mark { width: 30px; height: 30px; }
     .brand-name { font-size: .78rem; }

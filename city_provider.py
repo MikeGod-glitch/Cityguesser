@@ -12,7 +12,6 @@ from urllib.request import Request, urlopen
 
 
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
-ZH_WIKIPEDIA_API = "https://zh.wikipedia.org/w/api.php"
 EN_WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 USER_AGENT = "CityGuesser/1.0 (educational city photo game)"
 CACHE_TTL_SECONDS = 6 * 60 * 60
@@ -376,40 +375,27 @@ def _fetch_city_intro(title, endpoint):
 
 
 def get_city_intro(city):
-    """Return a cached Wikipedia introduction for a question's city."""
-    cache_key = city["answer"]
+    """Return a cached English Wikipedia introduction for a question's city."""
+    cache_key = ("en", city["answer"])
     with _cache_lock:
         cached = _intro_cache.get(cache_key)
     if cached and cached["expires_at"] > time.time():
         return cached["intro"]
 
-    chinese_title = next(
-        (
-            alias for alias in city.get("aliases", [])
-            if any("\u4e00" <= char <= "\u9fff" for char in alias)
-        ),
-        None,
-    )
-    sources = []
-    if chinese_title:
-        sources.append((chinese_title, ZH_WIKIPEDIA_API))
-    sources.append((city["answer"], EN_WIKIPEDIA_API))
-
-    for title, endpoint in sources:
-        try:
-            intro = _fetch_city_intro(title, endpoint)
-        except (OSError, ValueError, KeyError, json.JSONDecodeError):
-            continue
-        if intro:
-            with _cache_lock:
-                _intro_cache[cache_key] = {
-                    "expires_at": time.time() + INTRO_CACHE_TTL_SECONDS,
-                    "intro": intro,
-                }
-            return intro
+    try:
+        intro = _fetch_city_intro(city["answer"], EN_WIKIPEDIA_API)
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        intro = None
+    if intro:
+        with _cache_lock:
+            _intro_cache[cache_key] = {
+                "expires_at": time.time() + INTRO_CACHE_TTL_SECONDS,
+                "intro": intro,
+            }
+        return intro
 
     return {
-        "text": "城市介绍暂时无法加载。",
+        "text": "City information is temporarily unavailable.",
         "source_url": None,
     }
 

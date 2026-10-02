@@ -304,14 +304,7 @@ def ensure_game_mode():
 
 
 def get_revealed_answer(city):
-    chinese_name = next(
-        (
-            alias for alias in city.get("aliases", [])
-            if any("\u4e00" <= char <= "\u9fff" for char in alias)
-        ),
-        None,
-    )
-    return f"{chinese_name} / {city['answer']}" if chinese_name else city["answer"]
+    return city["answer"]
 
 
 def get_map_url(city):

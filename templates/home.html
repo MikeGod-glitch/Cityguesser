@@ -52,14 +52,14 @@
                 <figure class="travel-photo" id="home-album" role="region" aria-label="Travel photo album" aria-roledescription="carousel" tabindex="0">
                     <div class="travel-photo-stack">
                         {% set photos = [
-                            ('hanoi', 'Hanoi, Vietnam', 'Jack Young', 'people-in-market-during-daytime-QH0Y2aYUZGw', 'A basket of pineapples, a conical hat, and a passing scooter', 'What caught your eye first?', 'Vendors, fruit baskets and scooters at an outdoor market in Hanoi', '50% 50%'),
-                            ('amsterdam', 'Amsterdam, Netherlands', 'Fons Heijnsbroek', 'two-men-riding-bikes-on-road-at-the-city-during-day-01hwligitzs', 'Two officers, two bicycles, and a wall of graffiti', 'Would you have guessed from the bikes?', 'Two police officers cycling past a graffiti-covered wall in Amsterdam', '38% 50%'),
-                            ('bangkok', 'Bangkok, Thailand', 'Alexander Kaufmann', 'crowded-outdoor-market-in-bangkok-87jxSKq_8Jc', 'Red umbrellas, busy stalls, and a scooter squeezing through', 'Can you almost hear the market?', 'People and a scooter between market stalls under red umbrellas in Bangkok', '50% 75%'),
-                            ('jaipur', 'Jaipur, India', 'Laura Lezman', 'people-are-at-work-in-a-busy-street-6WTcS_rECpA', 'A little shop, a friendly conversation, and pots by the pavement', 'What else can you spot?', 'A shopkeeper chatting with a customer beside pots on a pavement in Jaipur', '52% 50%')
+                            ('hanoi', 'Hanoi, Vietnam', 'Jack Young', 'people-in-market-during-daytime-QH0Y2aYUZGw', 'A basket of pineapples, a conical hat, and a passing scooter', 'What caught your eye first?', 'Vendors, fruit baskets and scooters at an outdoor market in Hanoi'),
+                            ('amsterdam', 'Amsterdam, Netherlands', 'Fons Heijnsbroek', 'two-men-riding-bikes-on-road-at-the-city-during-day-01hwligitzs', 'Two officers, two bicycles, and a wall of graffiti', 'Would you have guessed from the bikes?', 'Two police officers cycling past a graffiti-covered wall in Amsterdam'),
+                            ('bangkok', 'Bangkok, Thailand', 'Alexander Kaufmann', 'crowded-outdoor-market-in-bangkok-87jxSKq_8Jc', 'Red umbrellas, busy stalls, and a scooter squeezing through', 'Can you almost hear the market?', 'People and a scooter between market stalls under red umbrellas in Bangkok'),
+                            ('jaipur', 'Jaipur, India', 'Laura Lezman', 'people-are-at-work-in-a-busy-street-6WTcS_rECpA', 'A little shop, a friendly conversation, and pots by the pavement', 'What else can you spot?', 'A shopkeeper chatting with a customer beside pots on a pavement in Jaipur')
                         ] %}
-                        {% for file, city, author, source, clues, question, alt, position in photos %}
+                        {% for file, city, author, source, clues, question, alt in photos %}
                         <div class="travel-photo-frame album-card" data-depth="{{ loop.index0 }}" data-city="{{ city }}" data-author="{{ author }}" data-source="https://unsplash.com/photos/{{ source }}" data-clues="{{ clues }}" data-question="{{ question }}" aria-hidden="{{ 'false' if loop.first else 'true' }}">
-                            <img src="{{ url_for('static', filename='images/home-' ~ file ~ '.jpg') }}" alt="{{ alt }}" style="object-position: {{ position }}" {% if loop.first %}fetchpriority="high"{% endif %} draggable="false">
+                            <img src="{{ url_for('static', filename='images/home-' ~ file ~ '.jpg') }}" alt="{{ alt }}" class="album-photo-{{ file }}" {% if loop.first %}fetchpriority="high"{% endif %} draggable="false">
                         </div>
                         {% endfor %}
                     </div>

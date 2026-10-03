@@ -400,6 +400,19 @@ def render_saved_outcome(city, preload_url=None):
 
 @app.route("/")
 def home():
+    has_game = bool(session.get("current_question"))
+    complete = has_game and is_challenge_complete()
+    return render_template(
+        "home.html", city_count=len(CITIES), has_game=has_game,
+        challenge_complete=complete,
+        resume_url=url_for("results" if complete else "play"),
+        game_mode=get_game_mode(), answer_mode=get_answer_mode(),
+        stats=get_game_stats() if has_game else None,
+    )
+
+
+@app.route("/play")
+def play():
     city = get_current_question() or get_new_question()
     start_question_prefetch()
     if session.get("question_resolved"):
@@ -478,10 +491,10 @@ def next_question():
 @app.route("/results")
 def results():
     if not is_challenge_complete():
-        return redirect(url_for("home"))
+        return redirect(url_for("play"))
     city = get_current_question()
     if not city:
-        return redirect(url_for("home"))
+        return redirect(url_for("play"))
     return render_question(city, game_summary=True)
 
 
@@ -491,7 +504,7 @@ def reset_game():
         request.form.get("mode", get_game_mode()),
         request.form.get("answer_mode"),
     )
-    return redirect(url_for("home"))
+    return redirect(url_for("play"))
 
 
 if __name__ == "__main__":

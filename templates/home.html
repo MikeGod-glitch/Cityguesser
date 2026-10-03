@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b1720">
+    <meta name="description" content="Explore 100 cities through photos. Test your geography with a quick city guessing challenge or play at your own pace.">
+    <title>City Guesser · Explore the world, one photo at a time</title>
+    <script>
+        try {
+            if (localStorage.getItem('city-guesser-theme') === 'light') {
+                document.documentElement.dataset.theme = 'light';
+                document.querySelector('meta[name="theme-color"]').content = '#f6f5f0';
+            }
+        } catch (_) { /* Use the default theme when storage is unavailable. */ }
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="{{ url_for('static', filename='script.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='home-album.js') }}" defer></script>
+</head>
+<body>
+    <div class="page-shell landing-shell">
+        <header class="site-header">
+            <a class="brand" href="{{ url_for('home') }}" aria-label="City Guesser home" title="Back to home">
+                <span class="brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9"/></svg>
+                </span>
+                <span class="brand-name">CITY<span>GUESSER</span></span>
+            </a>
+            <nav class="landing-nav" aria-label="Main navigation">
+                <a href="#how-to-play">How to play</a>
+                {% if has_game %}<a href="{{ resume_url }}">{{ 'Your results' if challenge_complete else 'Continue game' }}</a>{% else %}<a href="{{ url_for('play') }}">Quick play ↗</a>{% endif %}
+            </nav>
+            <button class="game-mode-button theme-toggle" type="button" aria-label="Switch to light mode">
+                <span class="theme-icon" aria-hidden="true">☀</span>
+                <span class="theme-label">Light</span>
+            </button>
+        </header>
+        <main>
+            <section class="landing-hero" aria-labelledby="landing-title">
+                <div class="landing-intro">
+                    <p class="landing-eyebrow landing-motto">Photos narrate memories, memories construct the world.</p>
+                    <h1 id="landing-title">Somewhere<br>looks <em>familiar.</em></h1>
+                    <p class="landing-description" id="album-description" aria-live="polite">A basket of pineapples, a conical hat, and a passing scooter—the photo on the right was taken in <strong>Hanoi, Vietnam</strong>. What caught your eye first?</p>
+                    <div class="landing-actions">
+                        <a class="primary-button" href="{{ resume_url if has_game else '#start-game' }}">{{ 'View your results' if challenge_complete else 'Continue your game →' if has_game else 'Explore the world →' }}</a>
+                        {% if has_game %}<a class="landing-text-link" href="#start-game">Start a new game</a>{% endif %}
+                    </div>
+                    {% if has_game %}<p class="landing-progress">{{ stats.answered }} answered · {{ stats.score }} points · {{ '10-question challenge' if game_mode == 'challenge' else 'Endless mode' }}</p>{% endif %}
+                    <div class="landing-facts"><span><strong>{{ city_count }}</strong> cities to discover</span><span><strong>2</strong> ways to guess</span><span><strong>∞</strong> curiosity</span></div>
+                </div>
+                <figure class="travel-photo" id="home-album" role="region" aria-label="Travel photo album" aria-roledescription="carousel" tabindex="0">
+                    <div class="travel-photo-stack">
+                        {% set photos = [
+                            ('hanoi', 'Hanoi, Vietnam', 'Jack Young', 'people-in-market-during-daytime-QH0Y2aYUZGw', 'A basket of pineapples, a conical hat, and a passing scooter', 'What caught your eye first?', 'Vendors, fruit baskets and scooters at an outdoor market in Hanoi', '50% 50%'),
+                            ('amsterdam', 'Amsterdam, Netherlands', 'Fons Heijnsbroek', 'two-men-riding-bikes-on-road-at-the-city-during-day-01hwligitzs', 'Two officers, two bicycles, and a wall of graffiti', 'Would you have guessed from the bikes?', 'Two police officers cycling past a graffiti-covered wall in Amsterdam', '38% 50%'),
+                            ('bangkok', 'Bangkok, Thailand', 'Alexander Kaufmann', 'crowded-outdoor-market-in-bangkok-87jxSKq_8Jc', 'Red umbrellas, busy stalls, and a scooter squeezing through', 'Can you almost hear the market?', 'People and a scooter between market stalls under red umbrellas in Bangkok', '50% 75%'),
+                            ('jaipur', 'Jaipur, India', 'Laura Lezman', 'people-are-at-work-in-a-busy-street-6WTcS_rECpA', 'A little shop, a friendly conversation, and pots by the pavement', 'What else can you spot?', 'A shopkeeper chatting with a customer beside pots on a pavement in Jaipur', '52% 50%')
+                        ] %}
+                        {% for file, city, author, source, clues, question, alt, position in photos %}
+                        <div class="travel-photo-frame album-card" data-depth="{{ loop.index0 }}" data-city="{{ city }}" data-author="{{ author }}" data-source="https://unsplash.com/photos/{{ source }}" data-clues="{{ clues }}" data-question="{{ question }}" aria-hidden="{{ 'false' if loop.first else 'true' }}">
+                            <img src="{{ url_for('static', filename='images/home-' ~ file ~ '.jpg') }}" alt="{{ alt }}" style="object-position: {{ position }}" {% if loop.first %}fetchpriority="high"{% endif %} draggable="false">
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <figcaption>
+                        <a id="album-source" href="https://unsplash.com/photos/people-in-market-during-daytime-QH0Y2aYUZGw" target="_blank" rel="noopener noreferrer">Photo by Jack Young · Unsplash ↗</a>
+                        <div class="album-controls" hidden>
+                            <button type="button" data-album-step="-1" aria-label="Previous photo">←</button>
+                            <span id="album-counter" aria-live="polite" aria-atomic="true">1 / 4</span>
+                            <button type="button" data-album-step="1" aria-label="Next photo">→</button>
+                        </div>
+                    </figcaption>
+                </figure>
+            </section>
+            <section class="landing-guide" id="how-to-play" aria-labelledby="guide-title">
+                <div class="landing-section-heading"><p class="landing-eyebrow">The journey is simple</p><h2 id="guide-title">Look. Guess. Discover.</h2></div>
+                <div class="guide-steps">
+                    <article><span class="step-number">01</span><h3>Read the scene</h3><p>Look for architecture, streets, waterways and landmarks. Every photo is a new clue.</p></article>
+                    <article><span class="step-number">02</span><h3>Name the city</h3><p>Type a full city name in English or Chinese, or choose from four options.</p></article>
+                    <article><span class="step-number">03</span><h3>Find your bearings</h3><p>After answering, open the map to see where you landed. Choose “I don't know” to reveal the city and read its introduction when available.</p></article>
+                </div>
+            </section>
+            <section class="landing-start" id="start-game" aria-labelledby="start-title">
+                <div class="start-copy"><p class="landing-eyebrow">Choose your adventure</p><h2 id="start-title">Where to next?</h2><p>Correct guesses earn 100 points. Build a streak for up to 200 per answer. A wrong guess or reveal resets your streak; revealing earns no points.</p></div>
+                <form class="start-form" action="{{ url_for('reset_game') }}" method="post">
+                    <fieldset><legend>Your pace</legend><div class="start-options">
+                        <label><input type="radio" name="mode" value="challenge" {% if game_mode == 'challenge' %}checked{% endif %}><span><strong>10-question challenge</strong><small>A short trip. One final score.</small></span></label>
+                        <label><input type="radio" name="mode" value="endless" {% if game_mode == 'endless' %}checked{% endif %}><span><strong>Endless exploration</strong><small>Keep going at your own pace.</small></span></label>
+                    </div></fieldset>
+                    <fieldset><legend>Your way to guess</legend><div class="start-options">
+                        <label><input type="radio" name="answer_mode" value="text" {% if answer_mode == 'text' %}checked{% endif %}><span><strong>Type answer</strong><small>Recall the city name.</small></span></label>
+                        <label><input type="radio" name="answer_mode" value="choice" {% if answer_mode == 'choice' %}checked{% endif %}><span><strong>Multiple choice</strong><small>Four cities. Follow your instinct.</small></span></label>
+                    </div></fieldset>
+                    <button class="primary-button" type="submit">{{ 'Start a new game →' if has_game else 'Start exploring →' }}</button>
+                    {% if has_game %}<p class="start-notice">Starting a new game resets your current score and progress.</p>{% endif %}
+                </form>
+            </section>
+        </main>
+        <footer class="landing-footer"><span>No passport needed.</span><span>Photo clues from Wikimedia Commons · Maps by OpenStreetMap</span></footer>
+    </div>
+</body>
+</html>

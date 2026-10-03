@@ -79,7 +79,7 @@ class MultipleChoiceFlowTests(unittest.TestCase):
         )
 
     def test_mode_switch_resets_score_and_refresh_keeps_choices(self):
-        self.client.get("/")
+        self.client.get("/play")
         with self.client.session_transaction() as session:
             session["game_stats"] = {"answered": 3, "correct": 2, "score": 200}
         response = self.start_choice()
@@ -87,7 +87,7 @@ class MultipleChoiceFlowTests(unittest.TestCase):
         self.assertNotIn(b'id="city-guess"', response.data)
         self.assertEqual(4, response.data.count(b'class="choice-flag"'))
         city = self.question()
-        self.client.get("/")
+        self.client.get("/play")
         self.assertEqual(city["choices"], self.question()["choices"])
         with self.client.session_transaction() as session:
             self.assertEqual(0, session["game_stats"]["answered"])

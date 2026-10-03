@@ -133,11 +133,10 @@ button, input { font: inherit; }
 }
 
 .brand { display: inline-flex; align-items: center; gap: 13px; text-decoration: none; }
-.brand-mark { position: relative; width: 36px; height: 36px; border: 1.5px solid var(--brand-accent); border-radius: 50%; display: grid; place-items: center; transform: rotate(-30deg); }
-.brand-mark::before, .brand-mark::after { position: absolute; content: ""; background: var(--brand-accent); }
-.brand-mark::before { width: 20px; height: 1px; }
-.brand-mark::after { width: 1px; height: 20px; }
-.brand-mark span { width: 6px; height: 6px; background: var(--brand-accent); transform: rotate(45deg); }
+.brand-mark { flex-shrink: 0; width: 36px; height: 36px; border: 1.5px solid var(--brand-accent); border-radius: 50%; display: grid; place-items: center; }
+.brand-mark svg { width: 65%; height: 65%; stroke: var(--brand-accent); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.brand:hover .brand-mark { background: var(--hover); }
+.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; border-radius: 4px; }
 .brand-name { font-size: .96rem; font-weight: 800; letter-spacing: .14em; white-space: nowrap; }
 .brand-name span { color: var(--brand-accent); }
 .game-layout {
@@ -253,6 +252,85 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 :root[data-theme="light"] .result-icon { color: #fff; }
 :root[data-theme="light"] .is-revealed .result-icon { color: #362616; background: #eeb16d; }
 :root[data-theme="light"] .primary-button:focus-visible { outline-color: #18343c; }
+
+.landing-shell { max-width: 1320px; }
+.landing-nav { display: flex; align-items: center; gap: 28px; margin-left: auto; font-size: .82rem; color: var(--soft-text); }
+.landing-nav a, .landing-text-link { text-decoration: none; }
+.landing-nav a:hover, .landing-text-link:hover { color: var(--accent); }
+.landing-nav + .theme-toggle { margin-left: 0; }
+.landing-hero { display: grid; grid-template-columns: minmax(0, 1.04fr) minmax(0, .96fr); align-items: center; gap: 36px; padding: 60px 0 56px; }
+.landing-eyebrow { margin: 0 0 20px; color: var(--accent); font-size: .7rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.landing-motto { max-width: 500px; font-size: .78rem; font-weight: 500; letter-spacing: .015em; line-height: 1.7; text-transform: none; }
+.landing-intro h1 { max-width: 650px; margin-bottom: 25px; font-size: clamp(3.6rem, 6.6vw, 6.3rem); line-height: 1.03; }
+.landing-intro h1 em { color: var(--accent); font-family: Georgia, serif; font-weight: 400; }
+.landing-description { max-width: 560px; min-height: 5.1em; margin: 0 0 24px; color: var(--soft-text); font-size: 1.05rem; line-height: 1.7; }
+.landing-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; }
+.landing-actions .primary-button { width: auto; min-width: 240px; }
+.landing-text-link { color: var(--soft-text); font-size: .85rem; }
+.landing-progress { color: var(--muted); font-size: .78rem; }
+.landing-facts { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 24px; color: var(--muted); font-size: .7rem; }
+.landing-facts span { display: flex; flex-direction: column; gap: 7px; }
+.landing-facts strong { color: var(--text); font-size: 1.65rem; font-weight: 600; }
+.travel-photo { width: 100%; min-width: 0; margin: 0; padding: 0 14px 0 0; box-sizing: border-box; }
+.travel-photo:focus-visible { outline: 2px solid var(--accent); outline-offset: 8px; border-radius: 18px; }
+.travel-photo-stack { position: relative; aspect-ratio: 10 / 9; touch-action: pan-y; }
+.travel-photo-frame { position: relative; overflow: hidden; border: 1px solid var(--frame-border); border-radius: 18px; background: var(--photo-bg); box-shadow: 0 24px 60px var(--frame-shadow); }
+.album-card { position: absolute; inset: 0; transition: transform .32s ease, opacity .32s ease; }
+.album-card[data-depth="0"] { z-index: 4; transform: none; }
+.album-card[data-depth="1"] { z-index: 3; transform: translate(12px, -14px) rotate(2deg) scale(.98); }
+.album-card[data-depth="2"] { z-index: 2; transform: translate(-10px, -24px) rotate(-2deg) scale(.96); }
+.album-card[data-depth="3"] { z-index: 1; transform: scale(.92); opacity: 0; }
+.travel-photo-frame > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.travel-photo figcaption { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; min-height: 36px; margin-top: 15px; color: var(--muted); font-size: .7rem; line-height: 1.5; }
+.album-controls { display: flex; align-items: center; gap: 12px; }
+.album-controls[hidden] { display: none; }
+.album-controls button { width: 34px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--score-bg); color: var(--text); font-size: 1.1rem; cursor: pointer; }
+.album-controls button:hover { border-color: var(--accent); color: var(--accent); }
+.album-controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#album-counter { min-width: 32px; text-align: center; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .album-card { transition: none; } }
+.travel-photo figcaption a { text-decoration: none; }
+.travel-photo figcaption a:hover { color: var(--accent); }
+.landing-guide { padding: 40px 0 50px; border-top: 1px solid var(--divider); scroll-margin-top: 25px; }
+.landing-section-heading .landing-eyebrow, .start-copy .landing-eyebrow { margin-bottom: 12px; }
+.landing-guide h2, .landing-start h2 { margin: 0; color: var(--strong); font-size: clamp(2rem, 3vw, 2.8rem); font-weight: 600; letter-spacing: -.04em; }
+.guide-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 45px; margin-top: 32px; }
+.step-number { color: var(--accent); font-family: Georgia, serif; font-size: 1.1rem; }
+.guide-steps h3 { margin: 12px 0 10px; color: var(--text); font-size: 1.05rem; font-weight: 600; }
+.guide-steps p, .start-copy > p:last-child { margin: 0; color: var(--soft-text); font-size: .87rem; line-height: 1.8; }
+.landing-start { display: grid; grid-template-columns: .8fr 1.2fr; gap: 80px; padding: 42px; margin-bottom: 40px; border: 1px solid var(--border); border-radius: 16px; background: var(--score-bg); scroll-margin-top: 25px; }
+.start-copy > p:last-child { max-width: 340px; margin-top: 20px; }
+.start-form fieldset { min-width: 0; margin: 0 0 20px; padding: 0; border: 0; }
+.start-form legend { margin-bottom: 10px; color: var(--soft-text); font-size: .78rem; font-weight: 700; }
+.start-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.start-options label { display: flex; align-items: flex-start; gap: 10px; padding: 16px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.start-options label:has(input:checked) { border-color: var(--accent); background: var(--reveal-bg); }
+.start-options label:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+.start-options input { flex-shrink: 0; margin: 3px 0 0; accent-color: var(--accent); }
+.start-options strong { display: block; color: var(--text); font-size: .8rem; line-height: 1.5; }
+.start-options small { display: block; margin-top: 4px; color: var(--muted); font-size: .72rem; line-height: 1.5; }
+.start-notice { margin: 10px 0 0; color: var(--muted); font-size: .75rem; line-height: 1.5; }
+.landing-footer { display: flex; justify-content: space-between; gap: 20px; padding: 0 0 28px; color: var(--muted); font-size: .7rem; line-height: 1.6; }
+@media (max-width: 980px) {
+    .landing-hero { grid-template-columns: 1fr; gap: 40px; padding-top: 45px; }
+    .landing-intro h1 { font-size: clamp(3.6rem, 9vw, 5.5rem); }
+    .travel-photo { margin: 0 auto; }
+    .travel-photo-stack { aspect-ratio: 10 / 9; }
+    .guide-steps { gap: 22px; }
+    .landing-start { grid-template-columns: 1fr; gap: 28px; padding: 30px; }
+    .start-copy > p:last-child { max-width: 100%; }
+}
+@media (max-width: 600px) {
+    .landing-nav { gap: 14px; width: 100%; order: 3; margin-left: 0; justify-content: space-between; }
+    .landing-nav + .theme-toggle { margin-left: auto; }
+    .landing-intro h1 { font-size: clamp(3rem, 12vw, 4.5rem); }
+    .landing-description { min-height: 6.8em; font-size: .95rem; }
+    .landing-facts { gap: 24px; }
+    .guide-steps { grid-template-columns: 1fr; gap: 28px; }
+    .landing-start { padding: 22px 18px; }
+    .start-options { grid-template-columns: 1fr; }
+    .landing-footer { flex-direction: column; gap: 6px; }
+}
 
 @keyframes rise-in { from { opacity: 0; transform: translateY(13px); } to { opacity: 1; transform: translateY(0); } }
 

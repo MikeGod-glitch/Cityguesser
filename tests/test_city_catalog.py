@@ -58,7 +58,7 @@ class CityCatalogTests(unittest.TestCase):
             game_app, "get_local_question", return_value=fallback.copy()
         ), patch.object(game_app, "start_question_prefetch", return_value=None):
             client = game_app.app.test_client()
-            response = client.get("/")
+            response = client.get("/play")
             self.assertEqual(200, response.status_code)
             self.assertIn(b"Question 1 / 10", response.data)
             self.assertNotIn(b"View on map", response.data)
@@ -268,7 +268,7 @@ class GameModeTests(unittest.TestCase):
     def test_tenth_question_does_not_prefetch_an_eleventh(self):
         self.seed_question(answered=9, correct=6)
         with patch.object(game_app._prefetch_executor, "submit") as submit:
-            response = self.client.get("/")
+            response = self.client.get("/play")
         self.assertEqual(200, response.status_code)
         self.assertIn(b"Question 10 / 10", response.data)
         submit.assert_not_called()
@@ -328,7 +328,7 @@ class GameModeTests(unittest.TestCase):
         self.seed_question(answered=9, correct=6)
         response = self.client.get("/results")
         self.assertEqual(302, response.status_code)
-        self.assertTrue(response.headers["Location"].endswith("/"))
+        self.assertTrue(response.headers["Location"].endswith("/play"))
 
 
 if __name__ == "__main__":

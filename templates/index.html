@@ -132,7 +132,12 @@
                         <div class="input-wrap">
                             <span class="input-pin" aria-hidden="true"></span>
                             <input id="city-guess" type="text" name="guess" placeholder="City name" autocomplete="off" spellcheck="false" required>
+                            <span class="input-country" role="status" aria-live="polite" aria-atomic="true">
+                                <img class="input-country-flag" alt="" width="32" height="24" hidden>
+                                <span class="sr-only input-country-label"></span>
+                            </span>
                         </div>
+                        <script id="city-flag-lookup" type="application/json">{{ city_flag_lookup | tojson }}</script>
                         <div class="form-actions">
                             <button class="primary-button" type="submit">Submit</button>
                             <button class="secondary-button reveal-button" type="submit" formaction="/reveal" formmethod="post" formnovalidate>I don't know</button>

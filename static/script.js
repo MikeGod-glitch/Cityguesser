@@ -20,6 +20,35 @@ if (themeToggle) {
 }
 
 const guessForm = document.querySelector('.guess-form');
+const cityGuess = document.querySelector('#city-guess');
+const cityFlagLookup = document.querySelector('#city-flag-lookup');
+
+if (cityGuess && cityFlagLookup) {
+    const cities = new Map(Object.entries(JSON.parse(cityFlagLookup.textContent)));
+    const flag = document.querySelector('.input-country-flag');
+    const label = document.querySelector('.input-country-label');
+
+    function updateCityFlag() {
+        // Match case-folded catalog names and aliases, without partial matches.
+        const name = cityGuess.value.trim().toLowerCase().replace(/ß/g, 'ss').replace(/ς/g, 'σ');
+        const city = cities.get(name);
+        if (city) {
+            flag.src = city.flag_url;
+            flag.alt = `${city.country} flag`;
+            flag.hidden = false;
+            label.textContent = `Recognized city: ${city.name}, ${city.country}`;
+        } else {
+            flag.hidden = true;
+            flag.removeAttribute('src');
+            flag.alt = '';
+            label.textContent = '';
+        }
+    }
+
+    cityGuess.addEventListener('input', updateCityFlag);
+    window.addEventListener('pageshow', updateCityFlag);
+    updateCityFlag();
+}
 
 if (guessForm) {
     const submitButtons = [...guessForm.querySelectorAll('button[type="submit"]')];

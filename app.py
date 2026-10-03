@@ -77,6 +77,15 @@ cities = [
 ]
 city_aliases = {name: aliases for name, aliases, _lat, _lon in CITIES}
 city_coordinates = {name: (lat, lon) for name, _aliases, lat, lon in CITIES}
+city_flag_lookup = {
+    label.casefold(): {
+        "name": name,
+        "country": CITY_PROFILES[name]["country"],
+        "flag_url": f"/static/flags/{CITY_PROFILES[name]['flag']}.svg",
+    }
+    for name, aliases, _lat, _lon in CITIES
+    for label in [name, *aliases]
+}
 
 
 def get_local_question():
@@ -333,6 +342,7 @@ def render_question(
         "question_id": city["question_id"],
         "game_mode": get_game_mode(),
         "answer_mode": get_answer_mode(),
+        "city_flag_lookup": city_flag_lookup,
         "choices": [
             {"name": name, **CITY_PROFILES[name]}
             for name in city.get("choices", [])

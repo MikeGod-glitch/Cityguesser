@@ -7,6 +7,8 @@ import random
 import re
 from threading import Lock
 import time
+from email.utils import parsedate_to_datetime
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -22,6 +24,10 @@ MIN_PHOTO_SCORE = 5
 MIN_PHOTO_PIXELS = 300_000
 PHOTO_CANDIDATE_LIMIT = 100
 DYNAMIC_CITY_ATTEMPTS = 4
+PHOTO_PREPARE_ATTEMPTS = 3
+EMPTY_CACHE_TTL_SECONDS = 5 * 60
+FAILURE_RETRY_SECONDS = 30
+STALE_CACHE_TTL_SECONDS = 24 * 60 * 60
 
 # Keeping this list local makes the game predictable and easy to maintain, while
 # Commons supplies many different photos for every city.
@@ -146,6 +152,11 @@ CITIES = [
 _photo_cache = {}
 _credit_cache = {}
 _intro_cache = {}
+_prepared_questions = {}
+_photo_retry_after = {}
+_thumbnail_retry_after = {}
+_photo_locks = {}
+_api_retry_after = {}
 _cache_lock = Lock()
 _blocked_title_words = {
     "flag", "map", "logo", "coat of arms", "locator", "diagram",
@@ -192,14 +203,55 @@ def _photo_family_key(title):
     return " ".join(words)
 
 
+class CommonsApiError(OSError):
+    def __init__(self, code, info):
+        self.code = code
+        super().__init__(f"{code}: {info}")
+
+
+def _check_api_data(data):
+    if not isinstance(data, dict):
+        raise ValueError("API response is not an object")
+    if data.get("error"):
+        error = data["error"]
+        raise CommonsApiError(error.get("code", "unknown"), error.get("info", "API error"))
+    return data
+
+
+def _retry_seconds(value):
+    try:
+        return max(0, float(value))
+    except (TypeError, ValueError):
+        try:
+            return max(0, parsedate_to_datetime(value).timestamp() - time.time())
+        except (TypeError, ValueError, OverflowError):
+            return 60
+
+
 def _api_get(params, endpoint=COMMONS_API):
+    with _cache_lock:
+        if _api_retry_after.get(endpoint, 0) > time.time():
+            raise CommonsApiError("backoff", "API retry period has not elapsed")
     query = urlencode({"format": "json", "formatversion": 2, **params})
     request = Request(
         f"{endpoint}?{query}",
         headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
     )
-    with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-        return json.load(response)
+    try:
+        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+            data = json.load(response)
+        return _check_api_data(data)
+    except HTTPError as exc:
+        if exc.code in {429, 503}:
+            value = exc.headers.get("Retry-After") if exc.headers else None
+            with _cache_lock:
+                _api_retry_after[endpoint] = max(_api_retry_after.get(endpoint, 0), time.time() + _retry_seconds(value))
+        raise
+    except CommonsApiError as exc:
+        if exc.code in {"ratelimited", "maxlag"}:
+            with _cache_lock:
+                _api_retry_after[endpoint] = time.time() + FAILURE_RETRY_SECONDS
+        raise
 
 
 def _clean_metadata(value, default="Unknown"):
@@ -250,11 +302,39 @@ def _photo_score(city, title, categories, width, height):
 
 
 def _fetch_photos(city):
+    # Single flight per city: concurrent players do not rebuild the same pool.
+    with _cache_lock:
+        city_lock = _photo_locks.setdefault(city[0], Lock())
+    with city_lock:
+        return _fetch_city_photos(city)
+
+
+def _fetch_city_photos(city):
     name, _aliases, lat, lon = city
     with _cache_lock:
         cached = _photo_cache.get(name)
     if cached and cached["expires_at"] > time.time():
         return cached["photos"]
+    stale = cached and cached.get("photos") and cached.get("stale_until", cached["expires_at"]) > time.time()
+    with _cache_lock:
+        retrying = _photo_retry_after.get(name, 0) > time.time()
+    if retrying:
+        if stale:
+            return cached["photos"]
+        raise CommonsApiError("backoff", "City photo refresh is waiting to retry")
+
+    try:
+        return _refresh_photos(city, cached if stale else None)
+    except (OSError, ValueError, KeyError):
+        with _cache_lock:
+            _photo_retry_after[name] = time.time() + FAILURE_RETRY_SECONDS
+        if stale:
+            return cached["photos"]
+        raise
+
+
+def _refresh_photos(city, stale_cache=None):
+    name, _aliases, lat, lon = city
 
     data = _api_get({
         "action": "query",
@@ -268,8 +348,8 @@ def _fetch_photos(city):
         "cllimit": "max",
         "clshow": "!hidden",
         "iiprop": "url|size|mime",
-        "iiurlwidth": 1280,
     })
+    _check_api_data(data)
 
     photo_families = {}
     for page in data.get("query", {}).get("pages", []):
@@ -281,7 +361,7 @@ def _fetch_photos(city):
             continue
         if width * height < MIN_PHOTO_PIXELS:
             continue
-        if not info.get("thumburl"):
+        if not info.get("url") and not info.get("thumburl"):
             continue
         categories = [category.get("title", "") for category in page.get("categories", [])]
         score = _photo_score(city, title, categories, width, height)
@@ -289,7 +369,9 @@ def _fetch_photos(city):
             continue
         photo = {
             "title": title,
-            "image_url": info["thumburl"],
+            # Do not render a potentially huge original. Prepare a thumbnail only
+            # after MIME/size/quality filtering, in a request for this file alone.
+            "image_url": info.get("thumburl"),
             "source_url": info.get("descriptionurl", ""),
             "_quality": (score, width * height),
         }
@@ -303,18 +385,25 @@ def _fetch_photos(city):
         photo.pop("_quality", None)
         photos.append(photo)
 
+    if not photos and stale_cache:
+        with _cache_lock:
+            _photo_retry_after[name] = time.time() + EMPTY_CACHE_TTL_SECONDS
+        return stale_cache["photos"]
+    now = time.time()
     with _cache_lock:
         _photo_cache[name] = {
-            "expires_at": time.time() + CACHE_TTL_SECONDS,
+            "expires_at": now + (CACHE_TTL_SECONDS if photos else EMPTY_CACHE_TTL_SECONDS),
+            "stale_until": now + STALE_CACHE_TTL_SECONDS,
             "photos": photos,
         }
+        _photo_retry_after.pop(name, None)
     return photos
 
 
 def _add_credit(photo):
     with _cache_lock:
         cached = _credit_cache.get(photo["title"])
-    if cached and cached["expires_at"] > time.time():
+    if cached and cached["expires_at"] > time.time() and (photo.get("image_url") or cached["metadata"].get("image_url")):
         photo.update(cached["metadata"])
         return photo
 
@@ -322,16 +411,19 @@ def _add_credit(photo):
         "action": "query",
         "titles": photo["title"],
         "prop": "imageinfo",
-        "iiprop": "url|extmetadata",
+        "iiprop": "url|size|mime|extmetadata",
+        "iiurlwidth": 1280,
         "iiextmetadatafilter": "Artist|Credit|LicenseShortName|UsageTerms",
         "iiextmetadatalanguage": "en",
     })
+    _check_api_data(data)
     pages = data.get("query", {}).get("pages", [])
     if not pages:
-        return photo
+        raise CommonsApiError("missing_image", "Image information is unavailable")
     info = (pages[0].get("imageinfo") or [{}])[0]
     metadata = info.get("extmetadata", {})
     credit = {
+        "image_url": info.get("thumburl") or photo.get("image_url"),
         "source_url": info.get("descriptionurl", photo["source_url"]),
         "author": _clean_metadata(
             metadata.get("Artist") or metadata.get("Credit"),
@@ -342,6 +434,8 @@ def _add_credit(photo):
             "See source for license",
         ),
     }
+    if not credit["image_url"]:
+        raise CommonsApiError("missing_thumbnail", "No usable thumbnail was returned")
     photo.update(credit)
     with _cache_lock:
         _credit_cache[photo["title"]] = {
@@ -417,19 +511,59 @@ def get_random_question(excluded_images=(), excluded_cities=()):
                 if p["title"] not in excluded
                 and _photo_id(p["title"]) not in excluded
             ]
+            with _cache_lock:
+                photos = [p for p in photos if _thumbnail_retry_after.get(p["title"], 0) <= time.time()]
             if not photos:
                 continue
-            photo = _add_credit(random.choice(photos))
-            name, aliases, _lat, _lon = city
-            return {
-                "answer": name,
-                "aliases": aliases,
-                "image_url": photo["image_url"],
-                "source_url": photo["source_url"],
-                "credit": [photo.get("author", "Wikimedia contributor"), photo.get("license", "See source for license")],
-                "image_id": _photo_id(photo["title"]),
-                "is_dynamic": True,
-            }
+            # A bad supported-format file should not discard the whole city.
+            for _ in range(min(PHOTO_PREPARE_ATTEMPTS, len(photos))):
+                photo = random.choice(photos)
+                photos.remove(photo)
+                try:
+                    photo = _add_credit(photo)
+                    if not photo.get("image_url"):
+                        continue
+                except CommonsApiError as exc:
+                    if exc.code in {"urlparamnormal", "missing_image", "missing_thumbnail"}:
+                        with _cache_lock:
+                            _thumbnail_retry_after[photo["title"]] = time.time() + EMPTY_CACHE_TTL_SECONDS
+                        continue
+                    raise
+                name, aliases, _lat, _lon = city
+                question = {
+                    "answer": name,
+                    "aliases": aliases,
+                    "image_url": photo["image_url"],
+                    "source_url": photo["source_url"],
+                    "credit": [photo.get("author", "Wikimedia contributor"), photo.get("license", "See source for license")],
+                    "image_id": _photo_id(photo["title"]),
+                    "is_dynamic": True,
+                }
+                with _cache_lock:
+                    _prepared_questions.setdefault(name, {})[question["image_id"]] = {
+                        "question": question.copy(), "expires_at": time.time() + CACHE_TTL_SECONDS,
+                    }
+                return question
         except (OSError, ValueError, KeyError, json.JSONDecodeError):
             continue
-    return None
+    return get_cached_question(excluded_images, excluded_cities)
+
+
+def get_cached_question(excluded_images=(), excluded_cities=()):
+    """Pick an already prepared photo without any network calls or history relaxation."""
+    excluded = set(excluded_images)
+    excluded_names = set(excluded_cities)
+    now = time.time()
+    candidates = {}
+    with _cache_lock:
+        for name, photos in _prepared_questions.items():
+            for image_id in list(photos):
+                if photos[image_id]["expires_at"] <= now:
+                    photos.pop(image_id)
+            if name not in excluded_names:
+                eligible = [entry["question"] for image_id, entry in photos.items() if image_id not in excluded]
+                if eligible:
+                    candidates[name] = eligible
+        if not candidates:
+            return None
+        return random.choice(candidates[random.choice(list(candidates))]).copy()

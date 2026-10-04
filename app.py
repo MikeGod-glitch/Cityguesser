@@ -8,7 +8,7 @@ import random
 import secrets
 import time
 
-from city_provider import CITIES, get_city_intro, get_random_question
+from city_provider import CITIES, get_city_intro, get_random_question, get_cached_question, _photo_id
 from city_choices import CITY_PROFILES, generate_choices
 
 app = Flask(__name__)
@@ -18,6 +18,7 @@ PREFETCH_WAIT_SECONDS = 0.3
 PREFETCH_TTL_SECONDS = 30 * 60
 CHALLENGE_LENGTH = 10
 RECENT_HISTORY_LENGTH = 20
+RECENT_IMAGE_HISTORY_LENGTH = 100
 GAME_MODES = {"challenge", "endless"}
 ANSWER_MODES = {"text", "choice"}
 _prefetch_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="city-question")
@@ -102,7 +103,7 @@ def get_local_question():
     session["remaining"] = remaining
     city = cities[idx].copy()
     city["aliases"] = city_aliases.get(city["answer"], [])
-    city["image_id"] = f"local:{city['answer']}"
+    city["image_id"] = _photo_id("File:" + city["commons"])
     city["is_dynamic"] = False
     return city
 
@@ -115,7 +116,7 @@ def remember_question(city):
     recent_images = list(session.get("recent_images", []))
     if city.get("image_id"):
         recent_images.append(city["image_id"])
-        session["recent_images"] = recent_images[-RECENT_HISTORY_LENGTH:]
+        session["recent_images"] = recent_images[-RECENT_IMAGE_HISTORY_LENGTH:]
     recent_cities = list(session.get("recent_cities", []))
     recent_cities.append(city["answer"])
     session["recent_cities"] = recent_cities[-RECENT_HISTORY_LENGTH:]
@@ -131,7 +132,8 @@ def remember_question(city):
 def get_new_question():
     recent_images = session.get("recent_images", [])
     recent_cities = session.get("recent_cities", [])
-    city = get_random_question(recent_images, recent_cities) or get_local_question()
+    city = (get_cached_question(recent_images, recent_cities)
+            or get_random_question(recent_images, recent_cities) or get_local_question())
     return remember_question(city)
 
 
@@ -246,7 +248,8 @@ def start_question_prefetch():
             if not future.done():
                 return
             try:
-                if future.result() is not None:
+                city = future.result()
+                if city is not None and not question_conflicts_with_history(city):
                     return
             except Exception:
                 pass
@@ -271,6 +274,9 @@ def get_prefetched_question(wait_seconds=0, consume=False):
     except Exception:
         city = None
 
+    if city is not None and question_conflicts_with_history(city):
+        city = None
+
     if consume or city is None:
         with _prefetch_lock:
             if _prefetches.get(player_id) == entry:
@@ -278,8 +284,21 @@ def get_prefetched_question(wait_seconds=0, consume=False):
     return city
 
 
+def question_conflicts_with_history(city):
+    return (city["answer"] in session.get("recent_cities", [])
+            or city.get("image_id") in session.get("recent_images", []))
+
+
 def get_next_question():
-    city = get_prefetched_question(PREFETCH_WAIT_SECONDS, consume=True)
+    # Use prepared photos before waiting or falling back to the fixed local pool.
+    city = get_prefetched_question(consume=True)
+    if city is None:
+        city = get_cached_question(session.get("recent_images", []), session.get("recent_cities", []))
+    if city is None:
+        start_question_prefetch()
+        city = get_prefetched_question(PREFETCH_WAIT_SECONDS, consume=True)
+    if city is None:
+        city = get_cached_question(session.get("recent_images", []), session.get("recent_cities", []))
     city = remember_question(city or get_local_question())
     start_question_prefetch()
     return city
@@ -295,7 +314,7 @@ def start_new_game(mode="challenge", answer_mode=None):
             entry = _prefetches.pop(player_id, None)
         if entry:
             entry[0].cancel()
-    recent_images = list(session.get("recent_images", []))[-RECENT_HISTORY_LENGTH:]
+    recent_images = list(session.get("recent_images", []))[-RECENT_IMAGE_HISTORY_LENGTH:]
     recent_cities = list(session.get("recent_cities", []))[-RECENT_HISTORY_LENGTH:]
     session.clear()
     session["game_mode"] = mode
@@ -310,6 +329,16 @@ def start_new_game(mode="challenge", answer_mode=None):
 def ensure_game_mode():
     if session.get("game_mode") not in GAME_MODES:
         start_new_game("challenge")
+    # Preserve existing players' local-photo history when moving to file identities.
+    history = session.get("recent_images", [])
+    normalized = [
+        _photo_id("File:" + commons[image_id[6:]])
+        if isinstance(image_id, str) and image_id.startswith("local:") and image_id[6:] in commons
+        else image_id
+        for image_id in history
+    ]
+    if normalized != history:
+        session["recent_images"] = normalized
 
 
 def get_revealed_answer(city):

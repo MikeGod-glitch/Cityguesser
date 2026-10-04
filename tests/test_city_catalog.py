@@ -13,6 +13,12 @@ IMAGE_DIR = PROJECT_ROOT / "static" / "images"
 
 
 class CityCatalogTests(unittest.TestCase):
+    def setUp(self):
+        city_provider._prepared_questions.clear()
+
+    def tearDown(self):
+        city_provider._prepared_questions.clear()
+
     def test_catalog_contains_exactly_one_hundred_unique_cities(self):
         names = [name for name, _aliases, _lat, _lon in CITIES]
         self.assertEqual(100, len(names))
@@ -316,7 +322,7 @@ class GameModeTests(unittest.TestCase):
             self.assertNotIn("game_stats", session)
             self.assertNotIn("current_question", session)
             self.assertEqual(
-                [f"image-{index}" for index in range(5, 25)],
+                [f"image-{index}" for index in range(25)],
                 session["recent_images"],
             )
             self.assertEqual(

@@ -16,9 +16,11 @@
     </script>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="{{ url_for('static', filename='script.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='records.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home-album.js') }}" defer></script>
 </head>
-<body>
+<body data-daily-date="{{ daily_date }}">
+    <script id="daily-runs-data" type="application/json">{{ daily_runs | tojson }}</script>
     <div class="page-shell landing-shell">
         <header class="site-header">
             <a class="brand" href="{{ url_for('home') }}" aria-label="City Guesser home" title="Back to home">
@@ -46,7 +48,7 @@
                         <a class="primary-button" href="{{ resume_url if has_game else '#start-game' }}">{{ 'View your results' if challenge_complete else 'Continue your game →' if has_game else 'Explore the world →' }}</a>
                         {% if has_game %}<a class="landing-text-link" href="#start-game">Start a new game</a>{% endif %}
                     </div>
-                    {% if has_game %}<p class="landing-progress">{{ stats.answered }} answered · {{ stats.score }} points · {{ '10-question challenge' if game_mode == 'challenge' else 'Endless mode' }}</p>{% endif %}
+                    {% if has_game %}<p class="landing-progress">{{ stats.answered }} answered · {{ stats.score }} points · {{ 'Daily challenge' if game_mode == 'daily' else '10-question challenge' if game_mode == 'challenge' else 'Endless mode' }}</p>{% endif %}
                     <div class="landing-facts"><span><strong>{{ city_count }}</strong> cities to discover</span><span><strong>2</strong> ways to guess</span><span><strong>∞</strong> curiosity</span></div>
                 </div>
                 <figure class="travel-photo" id="home-album" role="region" aria-label="Travel photo album" aria-roledescription="carousel" tabindex="0">
@@ -87,14 +89,34 @@
                     <fieldset><legend>Your pace</legend><div class="start-options">
                         <label><input type="radio" name="mode" value="challenge" {% if game_mode == 'challenge' %}checked{% endif %}><span><strong>10-question challenge</strong><small>A short trip. One final score.</small></span></label>
                         <label><input type="radio" name="mode" value="endless" {% if game_mode == 'endless' %}checked{% endif %}><span><strong>Endless exploration</strong><small>Keep going at your own pace.</small></span></label>
+                        <label class="daily-option"><input type="radio" name="mode" value="daily" {% if game_mode == 'daily' %}checked{% endif %}><span><strong>Daily challenge · {{ daily_date }}</strong><small>One attempt today. Pick your answer mode before starting; leave and resume anytime. New day at 00:00 Beijing time.</small></span></label>
                     </div></fieldset>
                     <fieldset><legend>Your way to guess</legend><div class="start-options">
                         <label><input type="radio" name="answer_mode" value="text" {% if answer_mode == 'text' %}checked{% endif %}><span><strong>Type answer</strong><small>Recall the city name.</small></span></label>
                         <label><input type="radio" name="answer_mode" value="choice" {% if answer_mode == 'choice' %}checked{% endif %}><span><strong>Multiple choice</strong><small>Four cities. Follow your instinct.</small></span></label>
                     </div></fieldset>
-                    <button class="primary-button" type="submit">{{ 'Start a new game →' if has_game else 'Start exploring →' }}</button>
-                    {% if has_game %}<p class="start-notice">Starting a new game resets your current score and progress.</p>{% endif %}
+                    <button class="primary-button" type="submit" data-start-button>{{ 'Start a new game →' if has_game else 'Start exploring →' }}</button>
+                    {% if has_game %}<p class="start-notice">A new ordinary game resets its score. Your daily challenge stays saved.</p>{% endif %}
                 </form>
+                <article class="record-card" data-daily-result-view hidden tabindex="-1" aria-labelledby="daily-result-title">
+                    <h3 id="daily-result-title">Today's daily result</h3>
+                    <p data-daily-result-details></p>
+                </article>
+            </section>
+            <section class="personal-records" aria-labelledby="records-title">
+                <p class="landing-eyebrow">Your travels, remembered</p>
+                <h2 id="records-title">Personal records</h2>
+                <p class="records-note">Saved in this browser. Best score wins; ties prefer more answers without hints. Clearing browser data removes these records and saved daily progress.</p>
+                <div class="records-grid">
+                    {% for mode, label in [('challenge', '10-question best')] %}
+                    {% for answer, name in [('text', 'Type answer'), ('choice', 'Multiple choice')] %}
+                    <article class="record-card"><h3>{{ label }} · {{ name }}</h3><p data-record="{{ mode }}:{{ answer }}">No completed games yet.</p></article>
+                    {% endfor %}
+                    {% endfor %}
+                </div>
+                <p class="daily-status" data-daily-status>Today: one daily challenge available.</p>
+                <div class="daily-resume-list" data-daily-pending></div>
+                <p class="records-note" data-storage-status role="status"></p>
             </section>
         </main>
         <footer class="landing-footer"><span>No passport needed.</span><span>Photo clues from Wikimedia Commons · Maps by OpenStreetMap</span></footer>

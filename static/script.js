@@ -22,6 +22,49 @@ if (themeToggle) {
 const guessForm = document.querySelector('.guess-form');
 const cityGuess = document.querySelector('#city-guess');
 const cityFlagLookup = document.querySelector('#city-flag-lookup');
+const hintTongue = document.querySelector('.hint-tongue');
+if (hintTongue) {
+    const isDaily = document.body.dataset.gameMode === 'daily';
+    const storage = () => isDaily ? localStorage : sessionStorage;
+    const key = isDaily ? `city-guesser-hint:${document.body.dataset.dailyDate}` : 'city-guesser-hint';
+    const question = hintTongue.dataset.questionId;
+    const field = hintTongue.querySelector('input[name="hint_level"]');
+    const button = hintTongue.querySelector('.hint-toggle');
+    const copy = hintTongue.querySelector('.hint-copy');
+    let level = Number(field.value) || 0;
+    let expanded = level > 0;
+    try {
+        const saved = JSON.parse(storage().getItem(key));
+        if (saved?.question === question) {
+            level = Math.max(level, Math.min(2, Math.max(0, Number(saved.level) || 0)));
+            expanded = level > 0 && saved.expanded !== false;
+            if (typeof saved.draft === 'string') cityGuess.value = saved.draft;
+        }
+    } catch (_) { /* Hints still work without browser storage. */ }
+    function updateHints() {
+        field.value = level;
+        copy.hidden = !expanded;
+        hintTongue.querySelector('[data-hint="2"]').hidden = level < 2;
+        hintTongue.dataset.expanded = String(expanded);
+        button.setAttribute('aria-expanded', String(expanded));
+        button.setAttribute('aria-label', !expanded ? 'Show hints' : level < 2 ? 'Show country or region hint' : 'Hide hints');
+        button.querySelector('.hint-label').textContent = !expanded ? 'Hint' : level < 2 ? 'More' : 'Hide';
+        button.querySelector('.hint-arrow').textContent = expanded && level >= 2 ? '‹' : '›';
+    }
+    function saveHints() {
+        try { storage().setItem(key, JSON.stringify({question, level, expanded, draft: cityGuess.value})); }
+        catch (_) { /* The submitted hidden field still records hint use. */ }
+    }
+    button.addEventListener('click', () => {
+        if (!expanded) { level = Math.max(1, level); expanded = true; }
+        else if (level < 2) level++;
+        else expanded = false;
+        updateHints();
+        saveHints();
+    });
+    cityGuess.addEventListener('input', saveHints);
+    updateHints();
+}
 
 if (cityGuess && cityFlagLookup) {
     const cities = new Map(Object.entries(JSON.parse(cityFlagLookup.textContent)));

@@ -32,8 +32,11 @@
     {% endif %}
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="{{ url_for('static', filename='script.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='records.js') }}" defer></script>
 </head>
-<body>
+<body data-daily-date="{{ daily_date }}" data-answer-mode="{{ answer_mode }}" data-game-mode="{{ game_mode }}">
+    <script id="daily-runs-data" type="application/json">{{ daily_runs | tojson }}</script>
+    {% if completion %}<script id="completion-data" type="application/json">{{ completion | tojson }}</script>{% endif %}
     <div class="page-shell">
         <header class="site-header">
             <a class="brand" href="/" aria-label="City Guesser home" title="Back to home">
@@ -45,7 +48,7 @@
             {% if not game_summary %}
             <form class="game-mode-controls" action="/reset" method="post" aria-label="Game length">
                 <button class="game-mode-button" type="submit" name="mode" value="challenge">{{ 'Restart challenge' if game_mode == 'challenge' else 'Start a 10-question challenge' }}</button>
-                <button class="game-mode-button" type="submit" name="mode" value="endless">{{ 'Endless mode' if game_mode == 'challenge' else 'Restart endless mode' }}</button>
+                <button class="game-mode-button" type="submit" name="mode" value="endless">{{ 'Restart endless mode' if game_mode == 'endless' else 'Endless mode' }}</button>
             </form>
             {% endif %}
             <button class="game-mode-button theme-toggle" type="button" aria-label="Switch to light mode">
@@ -58,7 +61,14 @@
             <section class="photo-section" aria-label="City photo clue">
                 <div class="photo-frame">
                     <img class="city-photo" src="{{ image_url }}" alt="A city to identify" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
-                    <a class="photo-error" href="/next" hidden>Image unavailable · Next city</a>
+                    {% if question_resolved %}
+                    <a class="photo-error" href="{{ url_for('results') if challenge_complete else url_for('next_question') }}" hidden>Image unavailable · {{ 'View results' if challenge_complete else 'Next city' }}</a>
+                    {% else %}
+                    <form class="photo-error" action="{{ url_for('reveal_answer') }}" method="post" hidden>
+                        <input type="hidden" name="question_id" value="{{ question_id }}">
+                        <button class="secondary-button" type="submit">Image unavailable · Reveal &amp; continue (no points)</button>
+                    </form>
+                    {% endif %}
                 </div>
                 {% if source_url %}
                 <p class="photo-credit">{{ credit[0] }} · {{ credit[1] }} · <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer">Source</a></p>
@@ -68,25 +78,31 @@
             <section class="answer-panel" aria-labelledby="game-title">
                 <div class="panel-content">
                     <p class="question-progress">
-                        {% if game_mode == 'challenge' %}
+                        {% if game_mode != 'endless' %}
                         Question {{ question_number }} / {{ question_total }}
                         {% else %}
                         Question {{ question_number }} <span>· Endless</span>
                         {% endif %}
                     </p>
+                    {% if game_mode == 'daily' %}<p class="daily-status">Daily · {{ daily_date }} · {{ 'Completed · one attempt today' if challenge_complete else 'One attempt · progress saved' }}</p>{% endif %}
                     <div class="scoreboard" aria-label="Current game score">
                         <div><span>Score</span><strong>{{ stats.score }}</strong></div>
                         <div><span>Streak</span><strong>{{ stats.streak }}</strong></div>
                         <div><span>Best</span><strong>{{ stats.best_streak }}</strong></div>
                         <div><span>Played</span><strong>{{ stats.answered }}</strong></div>
                     </div>
+                    {% if game_mode == 'endless' %}<p class="mode-hint">{{ stats.correct - stats.assisted }} correct without hints · {{ stats.assisted }} with hints</p>{% endif %}
 
+                    {% if game_mode == 'daily' %}
+                    <p class="mode-hint">{{ 'Type answer' if answer_mode == 'text' else 'Multiple choice' }} · Locked for this daily challenge</p>
+                    {% else %}
                     <form class="answer-mode-form" action="/reset" method="post" aria-label="Answer mode">
                         <input type="hidden" name="mode" value="{{ game_mode }}">
                         <button type="submit" name="answer_mode" value="text" aria-pressed="{{ 'true' if answer_mode == 'text' else 'false' }}"{% if answer_mode == 'text' %} disabled{% endif %}>Type answer</button>
                         <button type="submit" name="answer_mode" value="choice" aria-pressed="{{ 'true' if answer_mode == 'choice' else 'false' }}"{% if answer_mode == 'choice' %} disabled{% endif %}>Multiple choice</button>
                     </form>
                     <p class="mode-hint">Switching answer mode starts a new game.</p>
+                    {% endif %}
 
                     {% if game_summary %}
                     <h1 id="game-title">Challenge complete</h1>
@@ -95,9 +111,13 @@
                         <div class="summary-stat"><span>Correct answers</span><strong>{{ summary.correct }} / {{ summary.answered }}</strong></div>
                         <div class="summary-stat"><span>Accuracy</span><strong>{{ summary.accuracy }}%</strong></div>
                         <div class="summary-stat"><span>Best streak</span><strong>{{ summary.best_streak }}</strong></div>
+                        <div class="summary-stat"><span>Without hints</span><strong>{{ summary.unassisted }}</strong></div>
+                        <div class="summary-stat"><span>With hints</span><strong>{{ summary.assisted }}</strong></div>
                     </div>
+                    <p class="record-feedback" data-record-feedback role="status"></p>
+                    <p class="records-note" data-storage-status role="status"></p>
                     <form class="mode-actions" action="/reset" method="post">
-                        <button class="primary-button" type="submit" name="mode" value="challenge">Play again</button>
+                        <button class="primary-button" type="submit" name="mode" value="challenge">{{ 'Play a 10-question challenge' if game_mode == 'daily' else 'Play again' }}</button>
                         <button class="secondary-button" type="submit" name="mode" value="endless">Endless mode</button>
                     </form>
                     {% else %}
@@ -139,6 +159,11 @@
                                 <span class="sr-only input-country-label"></span>
                             </span>
                         </div>
+                        <div class="hint-tongue" data-question-id="{{ question_id }}" data-expanded="false">
+                            <input type="hidden" name="hint_level" value="{{ hint_level }}">
+                            <button class="hint-toggle" type="button" aria-controls="hint-copy" aria-expanded="false" aria-label="Show geographic hint"><span class="hint-label">Hint</span><span class="hint-arrow" aria-hidden="true">›</span></button>
+                            <span class="hint-copy" id="hint-copy" aria-live="polite" hidden><span data-hint="1">{{ hints[0] }}</span><span data-hint="2" hidden> · {{ hints[1] }}</span></span>
+                        </div>
                         <script id="city-flag-lookup" type="application/json">{{ city_flag_lookup | tojson }}</script>
                         <div class="form-actions">
                             <button class="primary-button" type="submit">Submit</button>
@@ -147,6 +172,7 @@
                         {% endif %}
                     </form>
                     {% endif %}
+                    {% if answer_mode == 'text' and hint_level %}<p class="mode-hint">Hints used for this question.</p>{% endif %}
                     {% if revealed_answer or result %}
                     {% if answer_mode == 'choice' %}{{ choice_grid(false) }}{% endif %}
                     <div class="result-actions{{ ' has-map' if map_url else '' }}">

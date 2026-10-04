@@ -338,6 +338,26 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 
 @keyframes rise-in { from { opacity: 0; transform: translateY(13px); } to { opacity: 1; transform: translateY(0); } }
 
+.daily-option { grid-column: 1 / -1; }
+.daily-status, .record-feedback { color: var(--accent); font-size: .8rem; line-height: 1.7; }
+.hint-tongue { display: flex; align-items: stretch; max-width: 100%; margin: 10px 0 12px; padding-left: 14px; }
+.guess-form:has(.hint-tongue) .input-wrap { margin-bottom: 0; }
+.hint-toggle { position: relative; z-index: 1; flex-shrink: 0; display: flex; align-items: center; gap: 7px; min-height: 28px; padding: 4px 10px; border: 0; border-radius: 8px; background: var(--selected); color: var(--accent); font: inherit; font-size: .72rem; cursor: pointer; }
+.hint-toggle:hover { background: var(--hover); }
+.hint-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hint-arrow { font-size: 1rem; line-height: 1; }
+.hint-copy { min-width: 0; margin-left: -8px; padding: 6px 10px 6px 16px; border-radius: 8px; background: var(--selected); color: var(--soft-text); font-size: .75rem; line-height: 1.5; overflow-wrap: anywhere; animation: hint-slide .2s ease-out; }
+.hint-copy[hidden], .hint-copy [hidden] { display: none; }
+@keyframes hint-slide { from { opacity: 0; transform: translateX(-6px); clip-path: inset(0 100% 0 0); } to { opacity: 1; transform: translateX(0); clip-path: inset(0); } }
+.records-note { color: var(--muted); font-size: .75rem; line-height: 1.7; }
+.personal-records { padding: 10px 0 40px; }
+.personal-records h2 { color: var(--strong); font-size: 2rem; margin: 0 0 12px; }
+.records-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+.record-card { padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--score-bg); }
+.record-card h3 { margin: 0 0 10px; color: var(--text); font-size: .85rem; }
+.record-card p { margin: 0; color: var(--soft-text); font-size: .8rem; line-height: 1.8; }
+@media (max-width: 600px) { .records-grid { grid-template-columns: 1fr; } }
+
 @media (max-width: 980px) {
     .page-shell { width: min(100% - 42px, 760px); }
     .game-layout { grid-template-columns: 1fr; gap: 38px; align-items: start; align-content: start; padding-top: 28px; }

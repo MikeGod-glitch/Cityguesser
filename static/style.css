@@ -242,6 +242,15 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 .game-mode-button:hover { border-color: var(--accent); background: var(--surface); color: var(--strong); }
 .game-mode-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .theme-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 7px; margin-left: auto; flex-shrink: 0; }
+.sound-toggle { flex-shrink: 0; }
+.sound-toggle[hidden] { display: none; }
+.sound-toggle[aria-pressed="true"] { opacity: .7; }
+.sound-controls { display: flex; align-items: center; gap: 10px; max-width: 100%; }
+.sound-controls[hidden] { display: none; }
+.sound-volume { display: flex; align-items: center; gap: 7px; color: var(--soft-text); font-size: .75rem; }
+.sound-volume input { width: clamp(70px, 8vw, 100px); margin: 0; accent-color: var(--accent); cursor: pointer; }
+.sound-volume input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.sound-volume output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
 .game-mode-controls + .theme-toggle { margin-left: 0; }
 .theme-icon { font-size: 1rem; }
 :root[data-theme="light"] .result-card { color: #1d5939; }

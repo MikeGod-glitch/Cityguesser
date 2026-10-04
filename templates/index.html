@@ -33,8 +33,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="{{ url_for('static', filename='script.js') }}" defer></script>
     <script src="{{ url_for('static', filename='records.js') }}" defer></script>
+    {% include 'sound-scripts.html' %}
 </head>
 <body data-daily-date="{{ daily_date }}" data-answer-mode="{{ answer_mode }}" data-game-mode="{{ game_mode }}">
+    <script id="sound-events-data" type="application/json">{{ sound_events | tojson }}</script>
     <script id="daily-runs-data" type="application/json">{{ daily_runs | tojson }}</script>
     {% if completion %}<script id="completion-data" type="application/json">{{ completion | tojson }}</script>{% endif %}
     <div class="page-shell">
@@ -55,6 +57,7 @@
                 <span class="theme-icon" aria-hidden="true">☀</span>
                 <span class="theme-label">Light</span>
             </button>
+            {% include 'sound-toggle.html' %}
         </header>
 
         <main class="game-layout">

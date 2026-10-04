@@ -18,6 +18,7 @@
     <script src="{{ url_for('static', filename='script.js') }}" defer></script>
     <script src="{{ url_for('static', filename='records.js') }}" defer></script>
     <script src="{{ url_for('static', filename='home-album.js') }}" defer></script>
+    {% include 'sound-scripts.html' %}
 </head>
 <body data-daily-date="{{ daily_date }}">
     <script id="daily-runs-data" type="application/json">{{ daily_runs | tojson }}</script>
@@ -37,6 +38,7 @@
                 <span class="theme-icon" aria-hidden="true">☀</span>
                 <span class="theme-label">Light</span>
             </button>
+            {% include 'sound-toggle.html' %}
         </header>
         <main>
             <section class="landing-hero" aria-labelledby="landing-title">

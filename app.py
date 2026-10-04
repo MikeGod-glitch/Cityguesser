@@ -423,7 +423,7 @@ def get_map_url(city):
 
 def render_question(
     city, result=None, preload_url=None, revealed_answer=None, city_intro=None,
-    round_points=None, game_summary=False,
+    round_points=None, game_summary=False, sound_events=None,
 ):
     stats = get_game_stats()
     context = {
@@ -454,6 +454,7 @@ def render_question(
         "question_resolved": session.get("question_resolved", False),
         "daily_date": session.get("daily_date", today()),
         "completion": session.get("completion"),
+        "sound_events": sound_events or [],
     }
     if city.get("is_dynamic"):
         return render_template(
@@ -552,7 +553,12 @@ def check():
         start_question_prefetch()
     next_city = get_prefetched_question() if not is_challenge_complete() else None
     preload_url = next_city.get("image_url") if next_city else None
-    return render_question(city, result, preload_url, round_points=points)
+    sound_events = [{"type": "correct" if is_correct else "wrong",
+                     "id": f"answer:{city['question_id']}"}]
+    if is_correct and get_game_stats()["streak"] in {3, 5, 10}:
+        sound_events.append({"type": "streak", "id": f"streak:{city['question_id']}"})
+    return render_question(city, result, preload_url, round_points=points,
+                           sound_events=sound_events)
 
 
 @app.route("/reveal", methods=["POST"])
@@ -599,7 +605,10 @@ def results():
     city = get_current_question()
     if not city:
         return redirect(url_for("play"))
-    return render_question(city, game_summary=True)
+    completion = session.get("completion")
+    sound_events = ([{"type": "levelComplete", "id": f"complete:{completion['run_id']}"}]
+                    if completion else [])
+    return render_question(city, game_summary=True, sound_events=sound_events)
 
 
 @app.route("/reset", methods=["POST"])

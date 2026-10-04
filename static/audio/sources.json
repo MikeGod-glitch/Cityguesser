@@ -1,0 +1,46 @@
+[
+  {
+    "file": "button-click.wav",
+    "original": "click4.wav",
+    "license": "CC0-1.0",
+    "source": "https://github.com/Calinou/kenney-ui-audio/blob/8c3d81b9159d058c444f89d12d518276b0b09345/addons/kenney_ui_audio/click4.wav",
+    "sha256": "0d80e2c82426316b140b0686e10f83924ef794e9a9dfe13aaaa794b18200b048",
+    "duration_seconds": 0.038
+  },
+  {
+    "file": "correct.wav",
+    "original": "jingles_PIZZI00.ogg",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/music-jingles",
+    "original_sha256": "b442ade3308a2bbda4b8c572c86f9f1071c7bdbcfb1e6f915d35c605b61bd475",
+    "sha256": "d8a2964a676c57c33274c785c59f60b6a069dc3eaaf46750a594eb2b2d260c1f",
+    "duration_seconds": 0.494
+  },
+  {
+    "file": "wrong.wav",
+    "original": "jingles_PIZZI04.ogg",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/music-jingles",
+    "original_sha256": "f98fa4af012d443da636a2d90f2926adc2384ec833851918f88426be9a25acf9",
+    "sha256": "39c87dc8ddf909d2d64bb43daff071c6b3b48b5025620b5ec852238ad4d3fe2d",
+    "duration_seconds": 0.563
+  },
+  {
+    "file": "streak.wav",
+    "original": "jingles_PIZZI01.ogg",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/music-jingles",
+    "original_sha256": "3f8f2534a297d19386c233a7ee4fa8737cc40870dd206010263760e1983dde46",
+    "sha256": "57ad76bb82cf4d951fea7b5bddf1938173d4f01354ed28930ed82137cc86d278",
+    "duration_seconds": 0.997
+  },
+  {
+    "file": "level-complete.wav",
+    "original": "jingles_PIZZI07.ogg",
+    "license": "CC0-1.0",
+    "source": "https://kenney.nl/assets/music-jingles",
+    "original_sha256": "91870588924e0e498c6eb8d4f4ccf8595c9e7dc51fb553797b551062e642ce7c",
+    "sha256": "7b9ef960b564e6de51401dd044d32a6a646ce94ec9e83a25981bb580faabc885",
+    "duration_seconds": 1.324
+  }
+]

@@ -6,6 +6,124 @@ const {join} = require('node:path');
 const source = readFileSync(join(__dirname, '../static/script.js'), 'utf8');
 const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 
+function feedbackPage(fetcher) {
+    const control = () => ({hidden: false, disabled: false, textContent: '',
+        addEventListener(name, callback) {this[name] = callback;}, setAttribute(name, value) {this[name] = value;}});
+    const trigger = control(), status = control(), description = control(), dialogStatus = control();
+    const yes = control(), cancel = control(), submit = control();
+    const firstRadio = {focus() {this.focused = true;}};
+    const reasons = {...control(), querySelector() {return firstRadio;}};
+    const dialog = {...control(), open: false, showModal() {this.open = true;}, close() {this.open = false;}};
+    const entry = {hidden: true, querySelector(selector) {return selector === '[data-feedback-open]' ? trigger : status;}};
+    const controls = {'[data-feedback-description]': description, '[data-feedback-reasons]': reasons,
+        '[data-feedback-yes]': yes, '[data-feedback-cancel]': cancel, '[data-feedback-submit]': submit,
+        '[data-feedback-dialog-status]': dialogStatus};
+    const timers = new Map(), calls = [];
+    const form = {action: '/photo-feedback', elements: {question_id: {value: 'current-question'}, reason: {value: ''}},
+        reset() {this.elements.reason.value = '';},
+        querySelector(selector) {return controls[selector];},
+        addEventListener(name, callback) {this[name] = callback;}};
+    const document = {querySelector(selector) {return {'[data-photo-feedback]': form,
+        '[data-photo-feedback-entry]': entry, '[data-feedback-dialog]': dialog}[selector] || null;}};
+    vm.runInNewContext(source, {document, window: {addEventListener() {}}, AbortController, URLSearchParams,
+        setTimeout(callback, delay) {timers.set(1, {callback, delay}); return 1;},
+        clearTimeout(id) {timers.delete(id);},
+        fetch(url, options) {calls.push({url, options}); return fetcher(url, options);}});
+    return {entry, trigger, status, form, dialog, yes, cancel, submitButton: submit, reasons, description,
+        dialogStatus, timers, calls, firstRadio,
+        open() {trigger.click();}, confirm() {yes.click();},
+        choose(reason = 'object_closeup') {form.elements.reason.value = reason; form.change();},
+        submit() {return form.submit({preventDefault() {}});}};
+}
+
+test('feedback requires confirmation and a reason before submitting', async () => {
+    const page = feedbackPage(async () => ({ok: true, json: async () => ({ok: true})}));
+    assert.equal(page.entry.hidden, false);
+    page.open();
+    assert.equal(page.dialog.open, true);
+    assert.equal(page.description.textContent, 'Does this photo lack city clues?');
+    assert.equal(page.reasons.hidden, true);
+    await page.submit();
+    assert.equal(page.calls.length, 0);
+    page.confirm();
+    assert.equal(page.reasons.hidden, false);
+    assert.equal(page.firstRadio.focused, true);
+    assert.equal(page.submitButton.disabled, true);
+    await page.submit();
+    assert.equal(page.calls.length, 0);
+    page.choose();
+    await page.submit();
+    assert.equal(page.calls.length, 1);
+    assert.equal(page.calls[0].options.body.toString(), 'question_id=current-question&reason=object_closeup');
+    assert.equal(page.calls[0].options.method, 'POST');
+    assert.equal(page.dialog.open, false);
+    assert.equal(page.status.textContent, 'Feedback recorded. Thank you.');
+    page.open();
+    assert.equal(page.dialog.open, false);
+    assert.equal(page.timers.size, 0);
+});
+
+test('cancelling either step sends nothing and reopening resets confirmation and reason', async () => {
+    const page = feedbackPage(async () => {throw new Error('must not fetch');});
+    page.open(); page.cancel.click();
+    assert.equal(page.dialog.open, false);
+    page.open(); page.confirm(); page.choose('indoor'); page.cancel.click();
+    assert.equal(page.calls.length, 0);
+    page.open();
+    assert.equal(page.reasons.hidden, true);
+    assert.equal(page.form.elements.reason.value, '');
+    await page.submit();
+    assert.equal(page.calls.length, 0);
+});
+
+test('feedback blocks duplicate submits and cancellation while sending', async () => {
+    let finish;
+    const page = feedbackPage(() => new Promise(resolve => {finish = resolve;}));
+    page.open(); page.confirm(); page.choose('person_closeup');
+    const first = page.submit();
+    await page.submit(); page.cancel.click();
+    let prevented = false;
+    page.dialog.cancel({preventDefault() {prevented = true;}});
+    assert.equal(prevented, true);
+    assert.equal(page.dialog.open, true);
+    assert.equal(page.calls.length, 1);
+    finish({ok: true, json: async () => ({ok: true})});
+    await first;
+    assert.equal(page.dialog.open, false);
+});
+
+test('feedback errors keep the selected reason and allow retry', async () => {
+    let attempts = 0;
+    const page = feedbackPage(async () => {
+        if (++attempts === 1) throw new TypeError('offline');
+        return {ok: true, json: async () => ({ok: true})};
+    });
+    page.open(); page.confirm(); page.choose('other');
+    await page.submit();
+    assert.equal(page.submitButton.disabled, false);
+    assert.equal(page.dialog.open, true);
+    assert.equal(page.form.elements.reason.value, 'other');
+    assert.equal(page.dialogStatus.textContent, 'Could not send feedback. Please try again.');
+    await page.submit();
+    assert.equal(page.calls.length, 2);
+    assert.equal(page.dialog.open, false);
+});
+
+test('feedback timeout leaves the reason step retryable', async () => {
+    const page = feedbackPage((url, options) => new Promise((resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+    }));
+    page.open(); page.confirm(); page.choose();
+    const request = page.submit();
+    const timer = page.timers.get(1);
+    assert.equal(timer.delay, 10000);
+    timer.callback(); await request;
+    assert.equal(page.submitButton.disabled, false);
+    assert.equal(page.cancel.disabled, false);
+    assert.equal(page.dialog.open, true);
+    assert.equal(page.timers.size, 0);
+});
+
 function visit({complete = false, failed = false, next, replies = []} = {}) {
     const events = {}, windowEvents = {}, calls = [], images = [], timers = new Map();
     let serial = 0;

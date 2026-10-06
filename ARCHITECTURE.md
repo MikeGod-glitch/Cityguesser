@@ -1,8 +1,8 @@
 # Project structure
 
 City Guesser uses Flask/Jinja with full-page navigation and small browser scripts.
-There is no database, frontend build step, or new runtime dependency introduced by
-the structural refactor.
+There is no frontend build step or external database service. Photo feedback uses
+Python's built-in SQLite support; no additional runtime dependency is required.
 
 ## Backend responsibilities
 
@@ -19,6 +19,7 @@ the structural refactor.
 | `question_prefetch.py` | Per-player background tasks, bounded waits, cancellation, expiration, and safe consumption. No Flask dependency. |
 | `dynamic_pool.py` | Shared background replenishment, city diversity, and atomic persistence of prepared dynamic questions. |
 | `image_cache.py` | Optional background thumbnail downloads and bounded atomic disk storage; no question selection. |
+| `photo_feedback.py` | Isolated photo feedback storage and local listing; never used by question selection. |
 | `daily_progress.py` | Signed progress snapshots, validation, snapshot selection, and browser descriptions. |
 | `game_features.py` | Beijing-time dates and two-level question hints. |
 | `app.py` | HTTP routes, session transitions, scoring, history, daily restoration, and template context. |
@@ -184,6 +185,40 @@ manifest restoration and existing browser-record migrations remain supported.
 The static fallback SVGs remain available as initial images for questions without
 Commons metadata. Commons-backed image load failures retain the error UI with a
 same-image retry; there is no automatic SVG substitution.
+
+## Photo feedback
+
+The question-mark icon sits above and outside the gameplay photo frame. Hover or
+keyboard focus reveals "missing city clues". A native modal dialog first asks
+"Does this photo lack city clues?"; Yes reveals four single-choice reasons:
+Indoor scene, Person close-up, Object close-up, and Other. Only confirmation,
+a selected reason, and Submit feedback send the current question ID and reason
+to `POST /photo-feedback` without
+navigating, answering, changing scores, or advancing history. The route reads the
+existing signed session's photo metadata rather than accepting image URLs or city
+names from the browser. Feedback requests skip background pool startup and image
+warming, and never draw or prefetch a question.
+
+Reports are saved only on submission to `instance/photo-feedback.sqlite3`, separate
+from the photo stock and candidates. Each photo merges reports from distinct
+anonymous reporters; repeat submissions by the same player count once. Reporter
+identities are keyed hashes, and gameplay sessions are not saved in the database.
+Reasons are validated server-side and aggregated in the local listing. Older
+reports remain readable as "Unspecified (legacy)" and migrate transactionally on
+the next submission. Cancellation does not send a request; submission errors
+retain the selected reason for retry. Native dialog manages focus and Escape;
+unsupported browsers keep the entry hidden.
+Concurrent submissions use SQLite transactions. A storage failure returns a
+retryable message without changing the game. The browser also permits retry after
+a network failure or ten-second timeout. Without JavaScript the control stays
+hidden rather than navigating to the JSON endpoint.
+
+To inspect feedback locally, including image/source links, city, report count and
+timestamps, run `python -B -m photo_feedback` (or supply `--path` for another saved
+database). The command is read-only and prints an empty list before any reports.
+No AI, moderation interface, automatic exclusion, blacklist or weighting exists in
+this stage. The database must be retained on persistent storage and included in
+backups if reports should survive deployment replacement. It is ignored by Git.
 
 ## Verification
 

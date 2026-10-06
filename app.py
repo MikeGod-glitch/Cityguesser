@@ -1,8 +1,11 @@
 from pathlib import Path
 from functools import partial
+import hashlib
+import hmac
 import json
 import os
 import secrets
+import sqlite3
 import time
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
@@ -21,9 +24,11 @@ from dynamic_pool import DynamicQuestionPool
 from photo_rotation import PhotoRotation
 import photo_statistics
 import daily_progress
+from photo_feedback import FEEDBACK_REASONS, record_feedback
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("CITY_GUESSER_SECRET", "city-game-development-secret")
+app.config["PHOTO_FEEDBACK_PATH"] = Path(app.instance_path) / "photo-feedback.sqlite3"
 
 PREFETCH_WAIT_SECONDS = 0.3
 PREFETCH_TTL_SECONDS = 30 * 60
@@ -60,7 +65,7 @@ thumbnail_warm_at = 0
 @app.before_request
 def replenish_dynamic_questions():
     global thumbnail_warm_at
-    if not app.testing and request.endpoint not in {"static", "thumbnail", "prefetch_image"}:
+    if not app.testing and request.endpoint not in {"static", "thumbnail", "prefetch_image", "photo_feedback"}:
         dynamic_pool.start()
         if time.monotonic() >= thumbnail_warm_at:
             thumbnail_warm_at = time.monotonic() + 30
@@ -432,6 +437,37 @@ def thumbnail(key):
         abort(404)
     response = send_file(path, conditional=True, max_age=24 * 3600)
     response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@app.route("/photo-feedback", methods=["POST"])
+def photo_feedback():
+    # Read the existing session directly: reporting never creates or advances a question.
+    city = session.get("current_question")
+    question_id = request.form.get("question_id", "")
+    reason = request.form.get("reason", "")
+    if not city or not question_id or question_id != city.get("question_id") or not city.get("image_id"):
+        response = jsonify(ok=False, message="This photo has changed. Please refresh and try again.")
+        response.status_code = 400
+    elif reason not in FEEDBACK_REASONS:
+        response = jsonify(ok=False, message="Please choose a feedback reason.")
+        response.status_code = 400
+    else:
+        # Store an opaque reporter identity, not the gameplay session or player ID.
+        identity = session.get("player_id") or question_id
+        secret = app.secret_key.encode("utf-8") if isinstance(app.secret_key, str) else app.secret_key
+        reporter = hmac.new(secret, ("photo-feedback:" + identity).encode("utf-8"), hashlib.sha256).hexdigest()
+        photo = city.copy()
+        photo["image_url"] = city.get("image_url") or question_image_context(city, app.static_folder)["image_url"]
+        try:
+            record_feedback(app.config["PHOTO_FEEDBACK_PATH"], photo, reporter, reason)
+        except (OSError, sqlite3.Error):
+            app.logger.warning("Could not save photo feedback", exc_info=True)
+            response = jsonify(ok=False, message="Feedback is temporarily unavailable. Please try again.")
+            response.status_code = 503
+        else:
+            response = jsonify(ok=True, message="Feedback recorded. Thank you.")
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 

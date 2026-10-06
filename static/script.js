@@ -1,3 +1,88 @@
+const photoFeedbackForm = document.querySelector('[data-photo-feedback]');
+if (photoFeedbackForm) {
+    const entry = document.querySelector('[data-photo-feedback-entry]');
+    const dialog = document.querySelector('[data-feedback-dialog]');
+    const trigger = entry.querySelector('[data-feedback-open]');
+    const status = entry.querySelector('[data-feedback-status]');
+    const description = photoFeedbackForm.querySelector('[data-feedback-description]');
+    const reasons = photoFeedbackForm.querySelector('[data-feedback-reasons]');
+    const yes = photoFeedbackForm.querySelector('[data-feedback-yes]');
+    const cancel = photoFeedbackForm.querySelector('[data-feedback-cancel]');
+    const submit = photoFeedbackForm.querySelector('[data-feedback-submit]');
+    const dialogStatus = photoFeedbackForm.querySelector('[data-feedback-dialog-status]');
+    let confirmed = false;
+    let sending = false;
+    let sent = false;
+    trigger.addEventListener('click', () => {
+        if (sending || sent) return;
+        photoFeedbackForm.reset();
+        confirmed = false;
+        reasons.hidden = true;
+        reasons.disabled = true;
+        yes.hidden = false;
+        submit.hidden = true;
+        submit.disabled = true;
+        description.textContent = 'Does this photo lack city clues?';
+        dialogStatus.textContent = '';
+        dialog.showModal();
+    });
+    yes.addEventListener('click', () => {
+        confirmed = true;
+        reasons.hidden = false;
+        reasons.disabled = false;
+        yes.hidden = true;
+        submit.hidden = false;
+        description.textContent = 'Why does this photo lack city clues?';
+        reasons.querySelector('input').focus();
+    });
+    photoFeedbackForm.addEventListener('change', () => {
+        submit.disabled = sending || !photoFeedbackForm.elements.reason.value;
+    });
+    cancel.addEventListener('click', () => { if (!sending) dialog.close(); });
+    dialog.addEventListener('cancel', event => { if (sending) event.preventDefault(); });
+    photoFeedbackForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        const reason = photoFeedbackForm.elements.reason.value;
+        if (!confirmed || !reason || sending || sent) return;
+        sending = true;
+        submit.disabled = true;
+        cancel.disabled = true;
+        reasons.disabled = true;
+        dialogStatus.textContent = 'Sending feedback…';
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        let failureMessage = 'Could not send feedback. Please try again.';
+        try {
+            const response = await fetch(photoFeedbackForm.action, {
+                method: 'POST', credentials: 'same-origin', cache: 'no-store',
+                headers: {'Accept': 'application/json'}, signal: controller.signal,
+                body: new URLSearchParams({question_id: photoFeedbackForm.elements.question_id.value, reason}),
+            });
+            const data = await response.json();
+            if (!response.ok || data.ok !== true) {
+                if (typeof data.message === 'string') failureMessage = data.message;
+                throw new Error(failureMessage);
+            }
+            sent = true;
+            dialog.close();
+            trigger.disabled = true;
+            trigger.setAttribute('aria-label', 'Feedback recorded for this photo');
+            status.textContent = 'Feedback recorded. Thank you.';
+        } catch (_) {
+            dialogStatus.textContent = failureMessage;
+        } finally {
+            sending = false;
+            reasons.disabled = false;
+            cancel.disabled = false;
+            submit.disabled = sent;
+            clearTimeout(timeout);
+        }
+    });
+    // Native dialog provides keyboard focus management and Escape cancellation.
+    // Without dialog support, hide the entry rather than navigate to a JSON reply.
+    if (typeof dialog.showModal === 'function') entry.hidden = false;
+}
+
 const themeToggle = document.querySelector('.theme-toggle');
 
 function createPhotoViewer(photo, viewport) {

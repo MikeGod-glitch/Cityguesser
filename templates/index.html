@@ -45,6 +45,32 @@
 
         <main class="game-layout">
             <section class="photo-section" aria-label="City photo clue">
+                <div class="photo-feedback" data-photo-feedback-entry hidden>
+                    <button class="photo-feedback-icon" type="button" data-feedback-open aria-label="Report missing city clues" aria-haspopup="dialog" aria-controls="photo-feedback-dialog">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.6-2.5 2-2.5 3.5"/><path d="M12 16h.01"/></svg>
+                    </button>
+                    <span class="photo-feedback-hint">missing city clues</span>
+                    <span class="photo-feedback-status" data-feedback-status role="status" aria-live="polite"></span>
+                </div>
+                <dialog class="feedback-dialog" id="photo-feedback-dialog" data-feedback-dialog aria-labelledby="feedback-title" aria-describedby="feedback-description">
+                    <form action="{{ url_for('photo_feedback') }}" method="post" data-photo-feedback>
+                        <input type="hidden" name="question_id" value="{{ question_id }}">
+                        <h2 id="feedback-title">Photo feedback</h2>
+                        <p id="feedback-description" data-feedback-description>Does this photo lack city clues?</p>
+                        <fieldset class="feedback-reasons" data-feedback-reasons hidden disabled>
+                            <legend>Choose one reason</legend>
+                            {% for value, label in [('indoor', 'Indoor scene'), ('person_closeup', 'Person close-up'), ('object_closeup', 'Object close-up'), ('other', 'Other')] %}
+                            <label><input type="radio" name="reason" value="{{ value }}" required><span>{{ label }}</span></label>
+                            {% endfor %}
+                        </fieldset>
+                        <p class="feedback-dialog-status" data-feedback-dialog-status role="status" aria-live="polite"></p>
+                        <div class="feedback-dialog-actions">
+                            <button type="button" data-feedback-cancel>Cancel</button>
+                            <button class="feedback-confirm" type="button" data-feedback-yes>Yes</button>
+                            <button class="feedback-confirm" type="submit" data-feedback-submit hidden disabled>Submit feedback</button>
+                        </div>
+                    </form>
+                </dialog>
                 <div class="photo-frame">
                     <div class="photo-viewport" title="Scroll to zoom · Drag to pan · Double-click to reset">
                     <img class="city-photo" src="{{ image_url }}" alt="A city to identify" draggable="false" aria-describedby="photo-view-help" fetchpriority="high" decoding="async"{% if remote_image_url %} data-remote-src="{{ remote_image_url }}"{% endif %}{% if prefetch_image_url %} data-prefetch-endpoint="{{ prefetch_image_url }}"{% endif %}{% if preload_url %} data-next-image="{{ preload_url }}"{% endif %} onload="this.parentElement.dataset.photoState='ready'" onerror="if(this.dataset.remoteSrc){const remote=this.dataset.remoteSrc;delete this.dataset.remoteSrc;this.src=remote}else{this.hidden=true;this.nextElementSibling.hidden=false;this.parentElement.dataset.photoState='error'}">

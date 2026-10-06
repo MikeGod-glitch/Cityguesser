@@ -19,9 +19,7 @@
     <meta name="theme-color" content="#0b1720">
     <title>City Guesser</title>
     {% include 'theme-bootstrap.html' %}
-    {% if preload_url %}
-    <link rel="preload" as="image" href="{{ preload_url }}">
-    {% endif %}
+    <link rel="preload" as="image" href="{{ image_url }}" fetchpriority="high">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="{{ url_for('static', filename='script.js') }}" defer></script>
     <script src="{{ url_for('static', filename='records.js') }}" defer></script>
@@ -48,7 +46,7 @@
         <main class="game-layout">
             <section class="photo-section" aria-label="City photo clue">
                 <div class="photo-frame">
-                    <img class="city-photo" src="{{ image_url }}" alt="A city to identify" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+                    <img class="city-photo" src="{{ image_url }}" alt="A city to identify" fetchpriority="high" decoding="async"{% if remote_image_url %} data-remote-src="{{ remote_image_url }}"{% endif %}{% if prefetch_image_url %} data-prefetch-endpoint="{{ prefetch_image_url }}"{% endif %}{% if preload_url %} data-next-image="{{ preload_url }}"{% endif %} onload="this.parentElement.dataset.photoState='ready'" onerror="if(this.dataset.remoteSrc){const remote=this.dataset.remoteSrc;delete this.dataset.remoteSrc;this.src=remote}else{this.hidden=true;this.nextElementSibling.hidden=false;this.parentElement.dataset.photoState='error'}">
                     {% if question_resolved %}
                     <a class="photo-error" href="{{ url_for('results') if challenge_complete else url_for('next_question') }}" hidden>Image unavailable · {{ 'View results' if challenge_complete else 'Next city' }}</a>
                     {% elif answer_mode == 'choice' %}
@@ -59,6 +57,8 @@
                         <button class="secondary-button" type="submit">Image unavailable · Reveal &amp; continue (no points)</button>
                     </form>
                     {% endif %}
+                    <span class="photo-loading" role="status">Loading photo…</span>
+                    <button class="photo-retry secondary-button" type="button" hidden>Retry photo</button>
                 </div>
                 {% if source_url %}
                 <p class="photo-credit">{{ credit[0] }} · {{ credit[1] }} · <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer">Source</a></p>

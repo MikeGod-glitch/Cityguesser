@@ -1,7 +1,9 @@
 """Build lightweight, dynamic city questions from Wikimedia Commons."""
 
 from html import unescape
+import hashlib
 import json
+from pathlib import Path
 import random
 import re
 from threading import Lock
@@ -13,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from city_catalog import CITIES
 from photo_rules import photo_id as _photo_id, photo_family_key as _photo_family_key, photo_score as _photo_score
+from photo_rules import photo_assessment, photo_variant_key
 from photo_sources import collect_city_photos
 import photo_statistics
 
@@ -21,6 +24,7 @@ COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 EN_WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 USER_AGENT = "CityGuesser/1.0 (educational city photo game)"
 CACHE_TTL_SECONDS = 6 * 60 * 60
+PREPARED_QUESTION_TTL_SECONDS = 24 * 60 * 60
 CREDIT_CACHE_TTL_SECONDS = 24 * 60 * 60
 INTRO_CACHE_TTL_SECONDS = 24 * 60 * 60
 REQUEST_TIMEOUT_SECONDS = 4
@@ -33,6 +37,13 @@ PHOTO_PREPARE_ATTEMPTS = 3
 EMPTY_CACHE_TTL_SECONDS = 5 * 60
 FAILURE_RETRY_SECONDS = 30
 STALE_CACHE_TTL_SECONDS = 24 * 60 * 60
+COMMONS_REQUEST_INTERVAL_SECONDS = 3
+CANDIDATE_MAX_PER_CITY = 500
+# Invalidate persisted decisions when discovery, filtering or city data changes.
+CANDIDATE_RULE_VERSION = hashlib.sha256(b"candidate-schema-1" + b"".join(
+    Path(__file__).with_name(name).read_bytes()
+    for name in ("photo_rules.py", "photo_sources.py", "city_catalog.py", "city_provider.py")
+)).hexdigest()
 
 _photo_cache = {}
 _credit_cache = {}
@@ -43,6 +54,9 @@ _thumbnail_retry_after = {}
 _photo_locks = {}
 _api_retry_after = {}
 _cache_lock = Lock()
+_commons_request_lock = Lock()
+_commons_next_request_at = 0
+_candidate_generation = 0
 _html_tag = re.compile(r"<[^>]+>")
 
 
@@ -72,6 +86,22 @@ def _retry_seconds(value):
 
 
 def _api_get(params, endpoint=COMMONS_API):
+    global _commons_next_request_at
+    if endpoint != COMMONS_API:
+        return _request_api(params, endpoint)
+    # Hold through response/error handling so another worker cannot send before
+    # Retry-After has been published. Never sleep while holding the cache lock.
+    with _commons_request_lock:
+        if commons_retry_delay() > 0:
+            raise CommonsApiError("backoff", "API retry period has not elapsed")
+        delay = _commons_next_request_at - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+        _commons_next_request_at = time.monotonic() + COMMONS_REQUEST_INTERVAL_SECONDS
+        return _request_api(params, endpoint)
+
+
+def _request_api(params, endpoint):
     with _cache_lock:
         if _api_retry_after.get(endpoint, 0) > time.time():
             raise CommonsApiError("backoff", "API retry period has not elapsed")
@@ -91,7 +121,7 @@ def _api_get(params, endpoint=COMMONS_API):
                 _api_retry_after[endpoint] = max(_api_retry_after.get(endpoint, 0), time.time() + _retry_seconds(value))
         raise
     except CommonsApiError as exc:
-        if exc.code in {"ratelimited", "maxlag"}:
+        if exc.code in {"ratelimited", "maxlag", "cirrussearch-too-busy-error"}:
             with _cache_lock:
                 _api_retry_after[endpoint] = time.time() + FAILURE_RETRY_SECONDS
         raise
@@ -141,23 +171,35 @@ def _fetch_city_photos(city):
         raise
 
 
-def _select_photo_candidates(city, pages):
-    """Filter metadata and retain the best file in each filename family."""
+def _select_photo_candidates(city, pages, diagnostics=None):
+    """Retain up to three distinguishable views per family, with exact-file dedup."""
     photo_families = {}
+    rejected = {}
+    identities = set()
+    def reject(reason):
+        rejected[reason] = rejected.get(reason, 0) + 1
     for page in pages:
         title = page.get("title", "")
+        if not title or title in identities:
+            reject("duplicate_or_missing_identity")
+            continue
+        identities.add(title)
         info = (page.get("imageinfo") or [{}])[0]
         width = info.get("width", 0)
         height = info.get("height", 0)
         if info.get("mime") not in SUPPORTED_PHOTO_MIMES:
+            reject("unsupported_format")
             continue
         if width * height < MIN_PHOTO_PIXELS:
+            reject("too_small")
             continue
         if not info.get("url") and not info.get("thumburl"):
+            reject("missing_url")
             continue
         categories = [category.get("title", "") for category in page.get("categories", [])]
-        score = _photo_score(city, title, categories, width, height)
+        score, reason = photo_assessment(city, title, categories, width, height)
         if score < MIN_PHOTO_SCORE:
+            reject(reason or "below_score")
             continue
         photo = {
             "title": title,
@@ -169,14 +211,30 @@ def _select_photo_candidates(city, pages):
             "scene_key": _scene_key(city, title, categories),
         }
         family = _photo_family_key(title)
-        existing = photo_families.get(family)
+        variants = photo_families.setdefault(family, {})
+        variant = (photo["scene_key"], photo_variant_key(title, categories, width, height))
+        existing = variants.get(variant)
         if not existing or photo["_quality"] > existing["_quality"]:
-            photo_families[family] = photo
+            if existing:
+                reject("same_family_view")
+            variants[variant] = photo
+        else:
+            reject("same_family_view")
 
     photos = []
-    for photo in photo_families.values():
-        photo.pop("_quality", None)
-        photos.append(photo)
+    for variants in photo_families.values():
+        representatives = list(variants.values())
+        # Quality is a floor and tie-breaker, not a weight in gameplay draws.
+        if len(representatives) > 3:
+            reject_count = len(representatives) - 3
+            rejected["family_limit"] = rejected.get("family_limit", 0) + reject_count
+            representatives = random.sample(representatives, 3)
+        for photo in representatives:
+            photo.pop("_quality", None)
+            photos.append(photo)
+    if diagnostics is not None:
+        diagnostics.clear()
+        diagnostics.update(filter_rejections=rejected, filename_families=len(photo_families))
     return photos
 
 
@@ -198,13 +256,15 @@ def _scene_key(city, title, categories):
 
 
 def _refresh_photos(city, stale_cache=None):
+    global _candidate_generation
     name = city[0]
+    filtering = {}
     photos, discovery = collect_city_photos(
         city, lambda params: _check_api_data(_api_get(params)),
-        _select_photo_candidates, commons_retry_delay,
+        lambda city, pages: _select_photo_candidates(city, pages, filtering), commons_retry_delay,
         limit=PHOTO_CANDIDATE_LIMIT,
     )
-    photo_statistics.record(name, "discovery", candidates=len(photos), **discovery)
+    photo_statistics.record(name, "discovery", candidates=len(photos), **discovery, **filtering)
 
     if not photos and stale_cache:
         with _cache_lock:
@@ -218,6 +278,7 @@ def _refresh_photos(city, stale_cache=None):
             "photos": photos,
         }
         _photo_retry_after.pop(name, None)
+        _candidate_generation += 1
     return photos
 
 
@@ -358,7 +419,7 @@ def _prepare_city_question(city, excluded, seen_images=()):
         }
         with _cache_lock:
             _prepared_questions.setdefault(name, {})[question["image_id"]] = {
-                "question": question.copy(), "expires_at": time.time() + CACHE_TTL_SECONDS,
+                "question": question.copy(), "expires_at": time.time() + PREPARED_QUESTION_TTL_SECONDS,
             }
         return question
     return None
@@ -376,15 +437,86 @@ def get_city_question(city, excluded_images=(), *, seen_images=()):
 
 
 def get_random_question(excluded_images=(), excluded_cities=(), *, seen_images=()):
-    """Return the first prepared question from randomly ordered candidate cities."""
+    """Draw ready inventory first; generate only when no eligible stock exists."""
+    cached = get_cached_question(excluded_images, excluded_cities, seen_images=seen_images)
+    if cached is not None:
+        return cached
     excluded = set(excluded_images)
     excluded_names = set(excluded_cities)
     available_cities = [city for city in CITIES if city[0] not in excluded_names] or CITIES
     for city in random.sample(available_cities, k=min(DYNAMIC_CITY_ATTEMPTS, len(available_cities))):
+        if commons_retry_delay() > 0:
+            break
         question = get_city_question(city, excluded, seen_images=seen_images)
         if question is not None:
             return question
     return get_cached_question(excluded_images, excluded_cities, seen_images=seen_images)
+
+
+def candidate_cache_generation():
+    with _cache_lock:
+        return _candidate_generation
+
+
+def candidate_photo_snapshot():
+    """Copy bounded eligible candidates, retaining their original freshness."""
+    now = time.time()
+    with _cache_lock:
+        return {
+            "rule_version": CANDIDATE_RULE_VERSION,
+            "generation": _candidate_generation,
+            "cities": {
+                name: {"expires_at": entry["expires_at"],
+                       "stale_until": entry.get("stale_until", entry["expires_at"]),
+                       "photos": [photo.copy() for photo in entry["photos"][:CANDIDATE_MAX_PER_CITY]]}
+                for name, entry in _photo_cache.items()
+                if entry.get("stale_until", entry["expires_at"]) > now
+            },
+        }
+
+
+def restore_candidate_photos(data):
+    """Restore validated decisions only under the exact current rule version."""
+    global _candidate_generation
+    if not isinstance(data, dict) or data.get("rule_version") != CANDIDATE_RULE_VERSION:
+        return
+    entries = data.get("cities")
+    if not isinstance(entries, dict):
+        return
+    now = time.time()
+    names = {city[0] for city in CITIES}
+    restored = {}
+    for name, entry in entries.items():
+        if name not in names or not isinstance(entry, dict):
+            continue
+        expires = entry.get("expires_at")
+        stale = entry.get("stale_until")
+        photos = entry.get("photos")
+        if (not isinstance(expires, (int, float)) or not isinstance(stale, (int, float))
+                or not expires <= now + CACHE_TTL_SECONDS
+                or not now < stale <= now + STALE_CACHE_TTL_SECONDS or stale < expires
+                or not isinstance(photos, list) or len(photos) > CANDIDATE_MAX_PER_CITY):
+            continue
+        valid = []
+        identities = set()
+        for photo in photos:
+            if (not isinstance(photo, dict) or not isinstance(photo.get("title"), str)
+                    or not photo["title"] or photo["title"] in identities
+                    or not isinstance(photo.get("source_url"), str)
+                    or not isinstance(photo.get("scene_key"), str)
+                    or not (photo.get("image_url") is None or isinstance(photo.get("image_url"), str))):
+                continue
+            identities.add(photo["title"])
+            valid.append({key: photo.get(key) for key in ("title", "image_url", "source_url", "scene_key")})
+        # A corrupt list must not turn a nonempty city into a fresh empty cache.
+        if photos and not valid:
+            continue
+        restored[name] = {"expires_at": expires, "stale_until": stale, "photos": valid}
+    with _cache_lock:
+        for name, entry in restored.items():
+            if _photo_cache.get(name, {}).get("expires_at", 0) < entry["expires_at"]:
+                _photo_cache[name] = entry
+                _candidate_generation += 1
 
 
 def get_cached_question(excluded_images=(), excluded_cities=(), *, seen_images=()):
@@ -441,7 +573,7 @@ def restore_prepared_questions(entries):
             expires_at = entry.get("expires_at")
             if (not isinstance(question, dict)
                     or not isinstance(expires_at, (int, float))
-                    or not now < expires_at <= now + CACHE_TTL_SECONDS
+                    or not now < expires_at <= now + PREPARED_QUESTION_TTL_SECONDS
                     or not isinstance(question.get("answer"), str)
                     or question["answer"] not in names
                     or question.get("is_dynamic") is not True

@@ -1,5 +1,90 @@
 const themeToggle = document.querySelector('.theme-toggle');
 
+// Warm only the existing next question, after the current clue has loaded.
+const cityPhoto = document.querySelector('.city-photo');
+if (cityPhoto) {
+    const frame = cityPhoto.parentElement;
+    const retry = frame.querySelector('.photo-retry');
+    const error = cityPhoto.nextElementSibling;
+    const retrySource = cityPhoto.dataset.remoteSrc || cityPhoto.getAttribute('src');
+    let prefetchStarted = false;
+    let stopped = false;
+    let timer;
+    let controller;
+    let warmedPhoto;
+    let measured = false;
+    const updatePhoto = () => {
+        const failed = cityPhoto.complete && cityPhoto.naturalWidth === 0;
+        frame.dataset.photoState = failed ? 'error' : cityPhoto.complete ? 'ready' : 'loading';
+        retry.hidden = !failed;
+        if (!measured && cityPhoto.complete && cityPhoto.naturalWidth > 0) {
+            measured = true;
+            const perf = window.performance;
+            const navigation = perf?.getEntriesByType('navigation')[0];
+            if (navigation && perf.measure) {
+                perf.measure('city-page-response', {start: 0, end: navigation.responseStart});
+                perf.measure('city-photo-visible', {start: navigation.responseStart, end: perf.now()});
+            }
+        }
+    };
+    function warm(url) {
+        if (stopped) return;
+        warmedPhoto = new Image();
+        warmedPhoto.fetchPriority = 'low';
+        warmedPhoto.decoding = 'async';
+        warmedPhoto.src = url;
+    }
+    async function poll(attempt = 0) {
+        if (stopped || attempt >= 12) return;
+        if (document.visibilityState === 'hidden') {
+            timer = setTimeout(() => poll(attempt + 1), 2500);
+            return;
+        }
+        const activeController = new AbortController();
+        controller = activeController;
+        const timeout = setTimeout(() => activeController.abort(), 3000);
+        try {
+            const response = await fetch(cityPhoto.dataset.prefetchEndpoint, {
+                cache: 'no-store', signal: activeController.signal,
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.image_url) { warm(data.image_url); return; }
+            }
+        } catch (_) { /* Prewarming must never interrupt gameplay. */ }
+        finally { clearTimeout(timeout); }
+        if (!stopped) timer = setTimeout(() => poll(attempt + 1), 2500);
+    }
+    function startPrefetch() {
+        if (prefetchStarted || stopped || cityPhoto.naturalWidth === 0) return;
+        prefetchStarted = true;
+        if (cityPhoto.dataset.nextImage) warm(cityPhoto.dataset.nextImage);
+        else if (cityPhoto.dataset.prefetchEndpoint) poll();
+    }
+    cityPhoto.addEventListener('load', () => { updatePhoto(); startPrefetch(); });
+    cityPhoto.addEventListener('error', () => {
+        // The inline handler may already have started the remote fallback.
+        if (cityPhoto.hidden) { frame.dataset.photoState = 'error'; retry.hidden = false; }
+    });
+    retry.addEventListener('click', () => {
+        cityPhoto.hidden = false;
+        error.hidden = true;
+        retry.hidden = true;
+        frame.dataset.photoState = 'loading';
+        cityPhoto.src = retrySource;
+    });
+    updatePhoto();
+    if (cityPhoto.complete && cityPhoto.naturalWidth > 0) startPrefetch();
+    window.addEventListener('pagehide', () => {
+        stopped = true;
+        clearTimeout(timer);
+        controller?.abort();
+    });
+    window.addEventListener('pageshow', event => {
+        if (event.persisted) { stopped = false; prefetchStarted = false; startPrefetch(); }
+    });
+}
+
 function updateThemeButton() {
     const isLight = document.documentElement.dataset.theme === 'light';
     themeToggle.querySelector('.theme-icon').textContent = isLight ? '☾' : '☀';

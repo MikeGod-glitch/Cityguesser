@@ -30,9 +30,33 @@ class PhotoSourceTests(unittest.TestCase):
             return {"query": {"pages": [photo_page(f"File:Paris skyline {chr(0x4e00+i)}.jpg")
                                           for i in range(40)]}}
         photos, stats = self.collect(api)
-        self.assertEqual(3, len(calls))
+        self.assertEqual(5, len(calls))
         self.assertEqual(40, len(photos))
         self.assertEqual(120, stats["sources"]["area"])
+        self.assertIn("deepcat", stats["sources"])
+
+    def test_rich_geographic_pool_still_gets_category_variety_with_four_calls(self):
+        calls = []
+        def api(params):
+            calls.append(params)
+            count = 100 if params["generator"] == "geosearch" else 1
+            return {"query": {"pages": [photo_page(f"File:Paris skyline {chr(0x4e00+i)}.jpg")
+                                          for i in range(count)]}}
+        photos, _ = self.collect(api)
+        self.assertEqual(100, len(photos))
+        self.assertEqual(4, len(calls))
+
+    def test_outer_areas_are_farther_apart_and_thematic_categories_rotate(self):
+        with patch("photo_sources.random.uniform", side_effect=[0, .06, .06]), \
+             patch("photo_sources.random.choice", side_effect=lambda values: values[0]):
+            queries = list(discovery_queries(self.city))
+        center, first, second = [params for source, params in queries if source == "area"]
+        first_lon = float(first["ggscoord"].split("|")[1])
+        second_lon = float(second["ggscoord"].split("|")[1])
+        self.assertGreater(abs(first_lon - second_lon), .1)
+        self.assertEqual(5000, center["ggsradius"])
+        self.assertEqual(3500, first["ggsradius"])
+        self.assertIn('Parks in Paris', queries[3][1]["gsrsearch"])
 
     def test_sparse_geographic_results_are_supplemented_by_categories(self):
         def api(params):
@@ -70,6 +94,15 @@ class PhotoSourceTests(unittest.TestCase):
         def api(params):
             return {"query": {"pages": [foreign] if params["generator"] == "search" else []}}
         self.assertEqual([], self.collect(api)[0])
+
+    def test_outer_areas_require_city_evidence_to_avoid_neighbor_city_photos(self):
+        foreign = photo_page("File:Tokyo street.jpg")
+        foreign["categories"] = [{"title": "Streets in Tokyo"}]
+        def api(params):
+            return {"query": {"pages": [foreign] if params.get("ggsradius") == 3500 else []}}
+        photos, stats = self.collect(api)
+        self.assertEqual([], photos)
+        self.assertEqual(1, stats["location_rejections"])
 
     def test_partial_network_failure_retains_valid_discoveries(self):
         count = 0

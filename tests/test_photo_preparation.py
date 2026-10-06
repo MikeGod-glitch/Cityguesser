@@ -110,7 +110,8 @@ class PhotoPreparationTests(unittest.TestCase):
             provider.get_random_question()
         self.assertEqual("Paris",ready["answer"])
         self.assertEqual("good",ready["image_url"])
-        self.assertEqual(3,credit.call_count)  # The bad file is skipped on the second visit.
+        # The second visit uses the ready good photo, without preparing it again.
+        self.assertEqual(2,credit.call_count)
 
     def test_ready_cache_excludes_recent_images_and_cities_without_network(self):
         q = question()

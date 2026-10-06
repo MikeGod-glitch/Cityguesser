@@ -142,7 +142,7 @@ button, input { font: inherit; }
     padding: clamp(28px, 4.5vh, 52px) 0 36px;
 }
 
-.photo-section { min-width: 0; animation: rise-in .65s ease both; }
+.photo-section { min-width: 0; animation: rise-in .2s ease both; }
 .photo-frame {
     position: relative;
     height: clamp(430px, 65vh, 760px);
@@ -159,6 +159,11 @@ button, input { font: inherit; }
 .photo-error { position: absolute; inset: 16px; display: grid; place-items: center; border-radius: 9px; background: var(--photo-bg); color: var(--error-text); font-size: .88rem; text-align: center; text-underline-offset: 3px; }
 .photo-error:hover { color: var(--strong); }
 .photo-error:focus-visible { outline: 3px solid var(--accent); outline-offset: -6px; }
+.photo-loading { position: absolute; inset: 16px; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
+.photo-frame[data-photo-state="ready"] .photo-loading,
+.photo-frame[data-photo-state="error"] .photo-loading { display: none; }
+.photo-retry { position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%); z-index: 2; }
+.photo-retry[hidden] { display: none; }
 .photo-credit { min-height: 18px; margin: 14px 4px 0; color: var(--credit); font-size: .7rem; line-height: 1.5; letter-spacing: .025em; }
 .photo-credit a { text-underline-offset: 3px; text-decoration-color: var(--credit-line); }
 .photo-credit a:hover { color: var(--strong); }

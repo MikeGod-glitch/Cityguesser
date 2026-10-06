@@ -18,6 +18,13 @@ _urban_words = {
     "railway station", "train station", "traffic", "bridge", "tower",
     "palace", "castle", "cathedral", "church", "mosque", "temple",
     "monument", "opera house", "town hall", "city hall", "skyscraper",
+    "panorama", "panoramic", "city view", "views of", "aerial view",
+    "aerial photograph", "city centre", "city center", "old town",
+    "market", "bazaar", "residential", "housing", "apartment", "facade",
+    "promenade", "esplanade", "quay", "pier", "port", "station",
+    "museum", "hotel", "university", "campus", "stadium", "public art",
+    "mural", "statue", "sculpture", "rue", "strasse", "straße", "calle",
+    "piazza", "avenida", "rua",
 }
 
 
@@ -40,6 +47,7 @@ _nature_words = {
 
 
 _quality_words = {"quality image", "featured picture", "valued image"}
+_green_space_words = {"park", "garden", "botanical garden", "urban green space"}
 
 
 def photo_id(title):
@@ -63,34 +71,58 @@ def contains_any(text, words):
     )
 
 
-def photo_score(city, title, categories, width, height):
-    """Score city-identifying scenes; return zero for irrelevant subjects."""
+def photo_assessment(city, title, categories, width, height):
+    """Favor varied city scenes; reject explicit non-scene subjects, not noisy tags."""
     name, aliases, _lat, _lon = city
     title_text = title.casefold()
     category_text = " ".join(categories).casefold()
     all_text = f"{title_text} {category_text}"
 
     if contains_any(title_text, _blocked_title_words):
-        return 0
-    if contains_any(all_text, _unrelated_words):
-        return 0
+        return 0, "non_photo_subject"
+    if contains_any(title_text, _unrelated_words):
+        return 0, "unsuitable_title"
 
+    has_city_name = any(label.casefold() in all_text for label in [name, *aliases])
+    title_urban = contains_any(title_text, _urban_words)
+    category_urban = contains_any(category_text, _urban_words)
     has_urban_context = contains_any(all_text, _urban_words)
-    has_nature_subject = contains_any(all_text, _nature_words)
-    if not has_urban_context:
-        return 0
-    if has_nature_subject and not contains_any(title_text, _urban_words):
-        return 0
+    city_green_space = has_city_name and contains_any(all_text, _green_space_words)
+    if not has_urban_context and not city_green_space:
+        return 0, "no_city_scene"
+    # Explicit plant/animal subjects remain out; incidental nature categories do
+    # not disqualify a city park, building, or streetscape.
+    if contains_any(title_text, _nature_words - {"garden"}) and not title_urban:
+        return 0, "nature_subject"
+    if contains_any(category_text, _unrelated_words) and not (
+        title_urban or (city_green_space and contains_any(title_text, _green_space_words))
+    ):
+        return 0, "unsuitable_categories"
 
-    city_names = [name, *aliases]
-    has_city_name = any(city_name.casefold() in all_text for city_name in city_names)
     score = 3
     if has_city_name:
         score += 3
-    if contains_any(category_text, _urban_words):
+    if category_urban or city_green_space:
         score += 2
     if contains_any(category_text, _quality_words):
         score += 2
     if width >= 1600 and height >= 900:
         score += 1
-    return score
+    return score, None
+
+
+def photo_score(city, title, categories, width, height):
+    return photo_assessment(city, title, categories, width, height)[0]
+
+
+def photo_variant_key(title, categories, width, height):
+    """Distinguish explicit view/time cues without treating counters as variety."""
+    text = (title + " " + " ".join(categories)).casefold()
+    cues = {"north", "south", "east", "west", "front", "rear", "aerial",
+            "night", "day", "dawn", "dusk", "sunrise", "sunset", "morning",
+            "evening", "winter", "summer", "spring", "autumn", "snow"}
+    views = tuple(sorted(word for word in cues if contains_any(text, {word})))
+    years = tuple(sorted(set(re.findall(r"\b(?:19|20)\d{2}\b", title))))
+    ratio = width / max(height, 1)
+    shape = "panoramic" if ratio >= 2 else "portrait" if ratio < .85 else "landscape" if ratio > 1.2 else "square"
+    return views, years, shape

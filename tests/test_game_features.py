@@ -130,7 +130,7 @@ class FeatureTests(unittest.TestCase):
             player_id = game.session["player_id"]
             self.addCleanup(game.question_prefetch.tasks.pop, player_id, None)
             fetch, images, cities = submit.call_args.args
-            self.assertIs(fetch.func, game.get_random_question)
+            self.assertIs(fetch.func, game.fetch_question_with_image)
             self.assertEqual({"seen_images": ()}, fetch.keywords)
             self.assertEqual((("seen-image",), ("Tokyo",)), (images, cities))
             self.assertEqual(self.dynamic(), game.get_prefetched_question(consume=True))

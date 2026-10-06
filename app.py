@@ -3,13 +3,16 @@ from functools import partial
 import json
 import os
 import secrets
+import time
 
-from flask import Flask, abort, redirect, render_template, request, session, url_for
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_file, session, url_for
 
 from city_catalog import CITIES, CITY_PROFILES
 from local_photos import COMMONS as commons, question_image_context
 from city_provider import get_city_intro, get_random_question, get_cached_question as _get_cached_question
 from city_provider import has_unseen_cached
+from city_provider import prepared_question_snapshot
+from image_cache import ThumbnailCache
 from photo_rules import photo_id as _photo_id
 from city_choices import generate_choices
 from game_features import question_hints, today
@@ -30,14 +33,39 @@ RECENT_IMAGE_HISTORY_LENGTH = 100
 GAME_MODES = {"challenge", "endless", "daily"}
 ANSWER_MODES = {"text", "choice"}
 question_prefetch = QuestionPrefetch(ttl_seconds=PREFETCH_TTL_SECONDS)
-dynamic_pool = DynamicQuestionPool(Path(app.instance_path) / "prepared-questions.json")
+thumbnail_cache = ThumbnailCache(Path(app.instance_path) / "thumbnails")
+
+
+def prepare_question_image(question):
+    if not app.testing:
+        try:
+            thumbnail_cache.enqueue(question)
+        except Exception:
+            app.logger.debug("Could not schedule thumbnail cache", exc_info=True)
+
+
+def fetch_question_with_image(recent_images, recent_cities, *, seen_images=()):
+    question = get_random_question(recent_images, recent_cities, seen_images=seen_images)
+    if question:
+        prepare_question_image(question)
+    return question
+
+
+dynamic_pool = DynamicQuestionPool(Path(app.instance_path) / "prepared-questions.json",
+                                  prepare_image=prepare_question_image)
 question_rotation = PhotoRotation()
+thumbnail_warm_at = 0
 
 
 @app.before_request
 def replenish_dynamic_questions():
-    if not app.testing and request.endpoint != "static":
+    global thumbnail_warm_at
+    if not app.testing and request.endpoint not in {"static", "thumbnail", "prefetch_image"}:
         dynamic_pool.start()
+        if time.monotonic() >= thumbnail_warm_at:
+            thumbnail_warm_at = time.monotonic() + 30
+            for entry in prepared_question_snapshot():
+                prepare_question_image(entry["question"])
 
 city_aliases = {name: aliases for name, aliases, _lat, _lon in CITIES}
 city_coordinates = {name: (lat, lon) for name, _aliases, lat, lon in CITIES}
@@ -193,7 +221,7 @@ def start_question_prefetch():
     ):
         return
     question_prefetch.start(
-        get_player_id(), partial(get_random_question, seen_images=question_rotation.seen(get_player_id())),
+        get_player_id(), partial(fetch_question_with_image, seen_images=question_rotation.seen(get_player_id())),
         tuple(session.get("recent_images", [])), tuple(session.get("recent_cities", [])),
         question_conflicts_with_history,
     )
@@ -378,9 +406,50 @@ def render_question(
         "completion": session.get("completion"),
         "sound_events": sound_events or [],
     }
-    return render_template(
-        "index.html", **question_image_context(city, app.static_folder), **context,
-    )
+    image_context = question_image_context(city, app.static_folder)
+    original_url = image_context["image_url"]
+    image_context["image_url"] = browser_image_url(city, original_url)
+    context["remote_image_url"] = original_url if image_context["image_url"] != original_url else None
+    context["prefetch_image_url"] = (url_for("prefetch_image", question_id=city["question_id"])
+                                      if not is_challenge_complete() else None)
+    return render_template("index.html", **image_context, **context)
+
+
+def browser_image_url(question, original_url=None):
+    original_url = original_url or question.get("image_url")
+    if question.get("is_dynamic") and original_url:
+        key = thumbnail_cache.key(original_url)
+        if thumbnail_cache.find(key):
+            return url_for("thumbnail", key=key)
+        prepare_question_image(question)
+    return original_url
+
+
+@app.route("/photos/<key>")
+def thumbnail(key):
+    path = thumbnail_cache.find(key)
+    if path is None:
+        abort(404)
+    response = send_file(path, conditional=True, max_age=24 * 3600)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@app.route("/prefetch-image")
+def prefetch_image():
+    # Peek only: no drawing, consumption, new tasks, or history advancement.
+    current = session.get("current_question")
+    payload = {}
+    complete = (session.get("game_mode") != "endless"
+                and session.get("game_stats", {}).get("answered", 0) >= CHALLENGE_LENGTH)
+    if (current and session.get("player_id")
+            and request.args.get("question_id") == current.get("question_id") and not complete):
+        following = get_prefetched_question()
+        if following:
+            payload["image_url"] = browser_image_url(following)
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def render_saved_outcome(city, preload_url=None):
@@ -447,7 +516,7 @@ def check():
     if not is_challenge_complete():
         start_question_prefetch()
     next_city = get_prefetched_question() if not is_challenge_complete() else None
-    preload_url = next_city.get("image_url") if next_city else None
+    preload_url = browser_image_url(next_city) if next_city else None
     sound_events = [{"type": "correct" if is_correct else "wrong",
                      "id": f"answer:{city['question_id']}"}]
     if is_correct and get_game_stats()["streak"] in {3, 5, 10}:
@@ -485,7 +554,7 @@ def reveal_answer():
         start_question_prefetch()
     intro = get_city_intro(city)
     next_city = get_prefetched_question() if not is_challenge_complete() else None
-    preload_url = next_city.get("image_url") if next_city else None
+    preload_url = browser_image_url(next_city) if next_city else None
     return render_question(
         city,
         preload_url=preload_url,

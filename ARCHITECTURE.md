@@ -8,7 +8,7 @@ the structural refactor.
 
 | Module | Responsibility |
 | --- | --- |
-| `city_catalog.py` | The 100-city catalog, aliases, coordinates, countries, flags, and styles. No I/O. |
+| `city_catalog.py` | The 150-city catalog, aliases, coordinates, countries, flags, and styles. No I/O. |
 | `city_choices.py` | Randomized distractor generation using catalog profiles. |
 | `photo_rules.py` | Stable file identities, filename-family grouping, and metadata scoring. No I/O. |
 | `photo_sources.py` | Bounded geographic and city-category discovery, identity merging, and partial-failure isolation. |

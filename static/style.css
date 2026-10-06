@@ -340,7 +340,9 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 .start-options strong { display: block; color: var(--text); font-size: .8rem; line-height: 1.5; }
 .start-options small { display: block; margin-top: 4px; color: var(--muted); font-size: .72rem; line-height: 1.5; }
 .start-notice { margin: 10px 0 0; color: var(--muted); font-size: .75rem; line-height: 1.5; }
-.landing-footer { display: flex; justify-content: space-between; gap: 20px; padding: 0 0 28px; color: var(--muted); font-size: .7rem; line-height: 1.6; }
+.landing-footer { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding: 0 0 28px; color: var(--muted); font-size: .7rem; line-height: 1.6; }
+.landing-footer > span:first-child { max-width: 680px; }
+.landing-footer > span:last-child { flex-shrink: 0; text-align: right; }
 @media (max-width: 980px) {
     .landing-hero { grid-template-columns: 1fr; gap: 40px; padding-top: 45px; }
     .landing-intro h1 { font-size: clamp(3.6rem, 9vw, 5.5rem); }
@@ -358,8 +360,9 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
     .landing-facts { gap: 24px; }
     .guide-steps { grid-template-columns: 1fr; gap: 28px; }
     .landing-start { padding: 22px 18px; }
-    .start-options { grid-template-columns: 1fr; }
     .landing-footer { flex-direction: column; gap: 6px; }
+    .landing-footer > span:last-child { text-align: left; }
+    .start-options { grid-template-columns: 1fr; }
 }
 
 @keyframes rise-in { from { opacity: 0; transform: translateY(13px); } to { opacity: 1; transform: translateY(0); } }

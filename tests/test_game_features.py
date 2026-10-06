@@ -82,7 +82,7 @@ class FeatureTests(unittest.TestCase):
     def test_special_city_hints_do_not_spell_out_the_answer(self):
         for name in ("Singapore", "Hong Kong", "Macau"):
             self.assertNotIn(name, features.question_hints(name)[1])
-        self.assertEqual(100, len(game.CITY_PROFILES))
+        self.assertEqual(150, len(game.CITY_PROFILES))
         for name in game.CITY_PROFILES:
             self.assertEqual(2, len(features.question_hints(name)))
 

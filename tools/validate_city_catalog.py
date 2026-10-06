@@ -19,8 +19,8 @@ def validate_catalog():
     errors = []
     names = [city[0] for city in CITIES]
 
-    if len(CITIES) != 100:
-        errors.append(f"expected 100 cities, found {len(CITIES)}")
+    if len(CITIES) != 150:
+        errors.append(f"expected 150 cities, found {len(CITIES)}")
     duplicates = sorted({name for name in names if names.count(name) > 1})
     if duplicates:
         errors.append(f"duplicate city names: {', '.join(duplicates)}")

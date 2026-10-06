@@ -24,10 +24,10 @@ class CityCatalogTests(unittest.TestCase):
     def tearDown(self):
         city_provider._prepared_questions.clear()
 
-    def test_catalog_contains_exactly_one_hundred_unique_cities(self):
+    def test_catalog_contains_exactly_one_hundred_fifty_unique_cities(self):
         names = [name for name, _aliases, _lat, _lon in CITIES]
-        self.assertEqual(100, len(names))
-        self.assertEqual(100, len(set(names)))
+        self.assertEqual(150, len(names))
+        self.assertEqual(150, len(set(names)))
 
     def test_every_city_has_a_chinese_alias_and_valid_coordinates(self):
         for name, aliases, latitude, longitude in CITIES:
@@ -97,7 +97,7 @@ class CityCatalogTests(unittest.TestCase):
         self.assertIsNone(game_app.get_map_url({"answer": "Unknown City"}))
 
     def test_dynamic_provider_excludes_recent_cities(self):
-        excluded = [name for name, _aliases, _lat, _lon in CITIES[:-1]]
+        excluded = [name for name, _aliases, _lat, _lon in CITIES if name != "Brisbane"]
         photo = {
             "title": "Brisbane skyline.jpg",
             "image_url": "https://example.com/brisbane.jpg",

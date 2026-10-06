@@ -10,7 +10,7 @@
         try {
             if (localStorage.getItem('city-guesser-theme') === 'light') {
                 document.documentElement.dataset.theme = 'light';
-                document.querySelector('meta[name="theme-color"]').content = '#f6f5f0';
+                document.querySelector('meta[name="theme-color"]').content = '#ffffff';
             }
         } catch (_) { /* Use the default theme when storage is unavailable. */ }
     </script>
@@ -100,10 +100,6 @@
                     <button class="primary-button" type="submit" data-start-button>{{ 'Start a new game →' if has_game else 'Start exploring →' }}</button>
                     {% if has_game %}<p class="start-notice">A new ordinary game resets its score. Your daily challenge stays saved.</p>{% endif %}
                 </form>
-                <article class="record-card" data-daily-result-view hidden tabindex="-1" aria-labelledby="daily-result-title">
-                    <h3 id="daily-result-title">Today's daily result</h3>
-                    <p data-daily-result-details></p>
-                </article>
             </section>
             <section class="personal-records" aria-labelledby="records-title">
                 <p class="landing-eyebrow">Your travels, remembered</p>
@@ -116,7 +112,7 @@
                     {% endfor %}
                     {% endfor %}
                 </div>
-                <p class="daily-status" data-daily-status>Today: one daily challenge available.</p>
+                <p class="daily-status" data-daily-status tabindex="-1">Today: one daily challenge available.</p>
                 <div class="daily-resume-list" data-daily-pending></div>
                 <p class="records-note" data-storage-status role="status"></p>
             </section>

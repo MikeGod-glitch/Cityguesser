@@ -139,12 +139,27 @@ class MultipleChoiceFlowTests(unittest.TestCase):
             self.assertEqual(0, session["game_stats"]["answered"])
             self.assertEqual(4, len(session["current_question"]["choices"]))
 
-    def test_reveal_and_endless_mode(self):
+    def test_choice_modes_have_no_reveal_button_or_image_error_reveal_form(self):
+        for mode in ("challenge", "endless", "daily"):
+            with self.subTest(mode=mode):
+                self.client = game.app.test_client()
+                response = self.start_choice(mode)
+                self.assertNotIn(b"I don't know", response.data)
+                self.assertNotIn(b'/reveal', response.data)
+                self.assertEqual(4, response.data.count(b'class="choice-flag"'))
+
+    def test_choice_cannot_reveal_and_endless_mode_still_advances_after_answering(self):
         self.start_choice("endless")
         city = self.question()
         response = self.client.post("/reveal", data={"question_id": city["question_id"]})
+        self.assertEqual(405, response.status_code)
+        with self.client.session_transaction() as session:
+            self.assertEqual(0, session["game_stats"]["answered"])
+            self.assertFalse(session["question_resolved"])
+        wrong = next(name for name in city["choices"] if name != city["answer"])
+        response = self.client.post("/check", data={"question_id": city["question_id"], "guess":wrong})
         self.assertIn(b"choice-correct", response.data)
-        self.assertNotIn(b"choice-wrong", response.data)
+        self.assertIn(b"choice-wrong", response.data)
         with self.client.session_transaction() as session:
             self.assertEqual("endless", session["game_mode"])
             self.assertEqual(1, session["game_stats"]["answered"])

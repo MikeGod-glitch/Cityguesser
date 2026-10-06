@@ -566,6 +566,8 @@ def check():
 
 @app.route("/reveal", methods=["POST"])
 def reveal_answer():
+    if get_answer_mode() != "text":
+        abort(405)
     city = get_current_question()
     if not city:
         city = get_new_question()

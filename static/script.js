@@ -5,7 +5,7 @@ function updateThemeButton() {
     themeToggle.querySelector('.theme-icon').textContent = isLight ? '☾' : '☀';
     themeToggle.querySelector('.theme-label').textContent = isLight ? 'Dark' : 'Light';
     themeToggle.setAttribute('aria-label', `Switch to ${isLight ? 'dark' : 'light'} mode`);
-    document.querySelector('meta[name="theme-color"]').content = isLight ? '#f6f5f0' : '#0b1720';
+    document.querySelector('meta[name="theme-color"]').content = isLight ? '#ffffff' : '#0b1720';
 }
 
 if (themeToggle) {

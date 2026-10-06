@@ -23,7 +23,7 @@
         try {
             if (localStorage.getItem('city-guesser-theme') === 'light') {
                 document.documentElement.dataset.theme = 'light';
-                document.querySelector('meta[name="theme-color"]').content = '#f6f5f0';
+                document.querySelector('meta[name="theme-color"]').content = '#ffffff';
             }
         } catch (_) { /* Storage may be unavailable; use the default dark theme. */ }
     </script>
@@ -66,6 +66,8 @@
                     <img class="city-photo" src="{{ image_url }}" alt="A city to identify" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
                     {% if question_resolved %}
                     <a class="photo-error" href="{{ url_for('results') if challenge_complete else url_for('next_question') }}" hidden>Image unavailable · {{ 'View results' if challenge_complete else 'Next city' }}</a>
+                    {% elif answer_mode == 'choice' %}
+                    <div class="photo-error" hidden>Image unavailable · Choose a city below to continue.</div>
                     {% else %}
                     <form class="photo-error" action="{{ url_for('reveal_answer') }}" method="post" hidden>
                         <input type="hidden" name="question_id" value="{{ question_id }}">
@@ -151,7 +153,6 @@
                         <input type="hidden" name="question_id" value="{{ question_id }}">
                         {% if answer_mode == 'choice' %}
                         {{ choice_grid(true) }}
-                        <button class="secondary-button reveal-button" type="submit" formaction="/reveal" formmethod="post" formnovalidate>I don't know</button>
                         {% else %}
                         <label class="sr-only" for="city-guess">City name</label>
                         <div class="input-wrap">

@@ -101,6 +101,7 @@
         startForm.addEventListener('change', update);
         update();
     }
+    let highlightTimer;
     document.querySelectorAll('form[action="/reset"]').forEach(form => {
         form.addEventListener('submit', event => {
             const mode = event.submitter?.name === 'mode' ? event.submitter.value
@@ -108,13 +109,15 @@
             if (mode !== 'daily') return;
             const day = event.submitter?.dataset.dailyDate || date;
             const result = records.daily[day];
-            const view = document.querySelector('[data-daily-result-view]');
-            if (result && view) {
+            if (result && status) {
                 event.preventDefault();
-                view.querySelector('[data-daily-result-details]').textContent = `${modeName(result.answer_mode)} · ${describe(result)}`;
-                view.hidden = false;
-                view.focus();
-                view.scrollIntoView({block: 'center'});
+                status.focus({preventScroll:true});
+                status.scrollIntoView({block:'center', behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
+                clearTimeout(highlightTimer);
+                status.classList.remove('daily-result-highlight');
+                void status.offsetWidth; // Restart the effect on repeated clicks.
+                status.classList.add('daily-result-highlight');
+                highlightTimer = setTimeout(() => status.classList.remove('daily-result-highlight'), 2000);
                 return;
             }
             const run = records.runs[day];

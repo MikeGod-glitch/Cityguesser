@@ -15,11 +15,14 @@ function visit(store, result = null, options = {}) {
     const elements = {'#completion-data': result && {textContent: JSON.stringify(result)},
         '[data-record-feedback]': feedback, '[data-storage-status]': storageStatus,
         '#daily-runs-data': options.runs && {textContent:JSON.stringify(options.runs)}};
-    const details = {textContent:''};
-    const resultView = {hidden:true, querySelector() {return details;}, focus() {this.focused = true;}, scrollIntoView() {}};
+    const classes = new Set();
+    const status = {textContent:'', classList:{add(name) {classes.add(name);}, remove(name) {classes.delete(name);}},
+        focus() {this.focused = true;}, scrollIntoView(settings) {this.scroll = settings;}};
+    const timers = new Map();
+    let timerId = 0;
     const button = {textContent:'Start exploring', disabled:false};
     if (options.home) {
-        elements['[data-daily-result-view]'] = resultView;
+        elements['[data-daily-status]'] = status;
         elements['.start-form'] = {
             querySelector(selector) {return selector === '[data-start-button]' ? button : {value:'daily'};},
             querySelectorAll() {return [];}, addEventListener() {},
@@ -36,8 +39,11 @@ function visit(store, result = null, options = {}) {
             if (options.unavailable) throw new Error('Storage blocked');
             store.value = value;
         }},
+        window: {matchMedia:() => ({matches:Boolean(options.reducedMotion)})},
+        setTimeout(callback, delay) {timers.set(++timerId, {callback, delay}); return timerId;},
+        clearTimeout(id) {timers.delete(id);},
     });
-    return {feedback, storageStatus, cards, form, button, resultView, details, saved: store.value && JSON.parse(store.value)};
+    return {feedback, storageStatus, cards, form, button, status, classes, timers, saved: store.value && JSON.parse(store.value)};
 }
 const score = (overrides = {}) => ({mode: 'challenge', answer_mode: 'text', score: 1000,
     correct: 8, answered: 10, unassisted: 6, assisted: 2, date: '2026-10-04',
@@ -127,9 +133,17 @@ test('legacy completed result without a progress token can be viewed without sta
     let prevented = false;
     home.form.submit({submitter:{dataset:{}}, preventDefault() {prevented = true;}});
     assert.equal(prevented, true);
-    assert.equal(home.resultView.hidden, false);
-    assert.equal(home.resultView.focused, true);
-    assert.match(home.details.textContent, /500 points/);
+    assert.equal(home.status.focused, true);
+    assert.equal(home.status.scroll.behavior, 'smooth');
+    assert.match(home.status.textContent, /500 points/);
+    assert.equal(home.classes.has('daily-result-highlight'), true);
+    home.form.submit({submitter:{dataset:{}}, preventDefault() {}});
+    assert.equal(home.timers.size, 1);
+    const timer = [...home.timers.values()][0];
+    assert.equal(timer.delay, 2000);
+    timer.callback();
+    assert.equal(home.classes.has('daily-result-highlight'), false);
+    assert.match(home.status.textContent, /500 points/);
     assert.equal(home.form.inputs.length, 0);
     assert.equal(home.saved.runs['2026-10-04'], undefined);
 });
@@ -138,11 +152,12 @@ test('completed signed run also views its stored result without restoring the ga
     const store = {};
     const run = {date:'2026-10-04', answer_mode:'text', answered:10, position:20, token:'completed', run_id:'first', complete:true};
     visit(store, score({mode:'daily'}), {runs:[run]});
-    const home = visit(store, null, {home:true});
+    const home = visit(store, null, {home:true, reducedMotion:true});
     let prevented = false;
     home.form.submit({submitter:{dataset:{}}, preventDefault() {prevented = true;}});
     assert.equal(prevented, true);
-    assert.match(home.details.textContent, /1000 points/);
+    assert.match(home.status.textContent, /1000 points/);
+    assert.equal(home.status.scroll.behavior, 'instant');
     assert.equal(home.form.inputs.length, 0);
     assert.equal(home.saved.runs['2026-10-04'].token, 'completed');
 });

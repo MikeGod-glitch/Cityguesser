@@ -4,13 +4,14 @@ from threading import Lock
 from urllib.parse import quote
 from pathlib import Path
 import os
+import json
 import random
 import secrets
 import time
 
 from city_provider import CITIES, get_city_intro, get_random_question, get_cached_question, _photo_id
 from city_choices import CITY_PROFILES, generate_choices
-from game_features import daily_questions, question_hints, today
+from game_features import question_hints, today
 import daily_progress
 
 app = Flask(__name__)
@@ -133,8 +134,6 @@ def remember_question(city):
 
 
 def get_new_question():
-    if get_game_mode() == "daily":
-        return get_daily_question()
     recent_images = session.get("recent_images", [])
     recent_cities = session.get("recent_cities", [])
     city = (get_cached_question(recent_images, recent_cities)
@@ -246,10 +245,8 @@ def save_question_outcome(result=None, points=0, revealed=False):
 
 
 def start_question_prefetch():
-    if get_game_mode() == "daily":
-        return
     if is_challenge_complete() or (
-        get_game_mode() == "challenge" and get_question_number() >= CHALLENGE_LENGTH
+        get_game_mode() != "endless" and get_question_number() >= CHALLENGE_LENGTH
     ):
         return
     player_id = get_player_id()
@@ -311,8 +308,6 @@ def question_conflicts_with_history(city):
 
 
 def get_next_question():
-    if get_game_mode() == "daily":
-        return get_daily_question()
     # Use prepared photos before waiting or falling back to the fixed local pool.
     city = get_prefetched_question(consume=True)
     if city is None:
@@ -349,6 +344,13 @@ def start_new_game(mode="challenge", answer_mode=None):
                 saved = candidate
         if saved is None and day != today():
             abort(400, description="No saved progress exists for this daily challenge.")
+        # Older browser snapshots stored an index into the former daily manifest.
+        if saved and saved.get("question_id") and not saved.get("current_question"):
+            path = Path(app.config.get("DAILY_DIRECTORY", Path(app.instance_path) / "daily")) / f"{day}.json"
+            if not path.is_file():
+                abort(409, description="The original daily question file is unavailable; saved progress has not been reset.")
+            saved["current_question"] = json.loads(path.read_text(encoding="utf-8"))[saved["question_index"]]
+            saved["current_question"]["question_id"] = saved["question_id"]
     player_id = session.get("player_id")
     if player_id:
         with _prefetch_lock:
@@ -357,6 +359,10 @@ def start_new_game(mode="challenge", answer_mode=None):
             entry[0].cancel()
     recent_images = list(session.get("recent_images", []))[-RECENT_IMAGE_HISTORY_LENGTH:]
     recent_cities = list(session.get("recent_cities", []))[-RECENT_HISTORY_LENGTH:]
+    if saved:
+        # Keep this daily run's seen questions even after playing another mode.
+        for key, history in (("recent_images", recent_images), ("recent_cities", recent_cities)):
+            history.extend(value for value in saved.get(key, []) if value not in history)
     session.clear()
     session["game_mode"] = mode
     session["answer_mode"] = answer_mode
@@ -366,16 +372,13 @@ def start_new_game(mode="challenge", answer_mode=None):
         session["daily_date"] = day
         if saved:
             session.update({key: saved[key] for key in daily_progress.FIELDS if key in saved})
-            if saved.get("question_id"):
-                city = load_daily_questions(day)[saved["question_index"]].copy()
-                city["question_id"] = saved["question_id"]
-                session["current_question"] = city
         get_game_stats()
-        daily_progress.capture(session, app.secret_key)
     if recent_images:
-        session["recent_images"] = recent_images
+        session["recent_images"] = recent_images[-RECENT_IMAGE_HISTORY_LENGTH:]
     if recent_cities:
-        session["recent_cities"] = recent_cities
+        session["recent_cities"] = recent_cities[-RECENT_HISTORY_LENGTH:]
+    if mode == "daily":
+        daily_progress.capture(session, app.secret_key)
 
 
 @app.before_request
@@ -618,35 +621,6 @@ def reset_game():
         request.form.get("answer_mode"),
     )
     return redirect(url_for("play"))
-
-
-def build_daily_questions(date):
-    # Prepared photos require no network. The local pool fills any shortfall.
-    selected = []
-    fallback = random.Random(date).sample(cities, len(cities))
-    while len(selected) < CHALLENGE_LENGTH:
-        used_images = [q["image_id"] for q in selected]
-        used_cities = [q["answer"] for q in selected]
-        question = get_cached_question(used_images, used_cities)
-        if question is None:
-            question = next(q.copy() for q in fallback if q["answer"] not in used_cities
-                            and _photo_id("File:" + q["commons"]) not in used_images)
-            question.update(aliases=city_aliases[question["answer"]], is_dynamic=False,
-                            image_id=_photo_id("File:" + question["commons"]))
-        selected.append(question)
-        question["choices"] = generate_choices(question["answer"])
-    return selected
-
-
-def get_daily_question():
-    date = session.setdefault("daily_date", today())
-    questions = load_daily_questions(date)
-    return remember_question(questions[get_game_stats()["answered"]])
-
-
-def load_daily_questions(date):
-    directory = app.config.get("DAILY_DIRECTORY", Path(app.instance_path) / "daily")
-    return daily_questions(directory, date, build_daily_questions)
 
 
 if __name__ == "__main__":

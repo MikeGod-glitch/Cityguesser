@@ -7,12 +7,14 @@ from itsdangerous import BadSignature, URLSafeSerializer
 
 FIELDS = ("daily_date", "answer_mode", "daily_run_id", "game_stats", "question_resolved",
           "question_result", "question_points", "question_revealed", "selected_choice",
-          "hint_level", "completion")
+          "hint_level", "completion", "current_question", "remaining")
 
 
 def read(token, secret):
     try:
-        state = URLSafeSerializer(secret, salt="daily-progress-v1").loads(token)
+        # Dictionaries only come from Flask's already signed session cookie;
+        # browser form values remain signed strings.
+        state = token if isinstance(token, dict) else URLSafeSerializer(secret, salt="daily-progress-v1").loads(token)
         date.fromisoformat(state["daily_date"])
         if state["answer_mode"] not in {"text", "choice"} or not 0 <= state["game_stats"]["answered"] <= 10:
             return None
@@ -32,11 +34,14 @@ def capture(session, secret):
     state = {key: session[key] for key in FIELDS if key in session}
     question = session.get("current_question", {})
     state["question_id"] = question.get("question_id")
-    answered = state["game_stats"]["answered"]
-    state["question_index"] = max(0, answered - int(state.get("question_resolved", False)))
-    token = URLSafeSerializer(secret, salt="daily-progress-v1").dumps(state)
+    # Ten recent entries cover the whole daily round without growing each token
+    # with the player's entire ordinary-game history.
+    for key in ("recent_images", "recent_cities"):
+        state[key] = list(session.get(key, []))[-10:]
     runs = dict(session.get("daily_runs", {}))
-    runs[state["daily_date"]] = token
+    # Store structured data inside the signed cookie so compression can share
+    # repeated photo/history fields. Sign browser snapshots only when rendering.
+    runs[state["daily_date"]] = state
     # Browser storage keeps older runs; keep the cookie small.
     runs = {day: runs[day] for day in sorted(runs)[-2:]}
     if runs != session.get("daily_runs"):
@@ -50,4 +55,4 @@ def describe(token, secret):
     return {"date": state["daily_date"], "answer_mode": state["answer_mode"],
             "run_id": state["daily_run_id"], "answered": state["game_stats"]["answered"],
             "position": position(state), "complete": state["game_stats"]["answered"] >= 10,
-            "token": token}
+            "token": URLSafeSerializer(secret, salt="daily-progress-v1").dumps(state)}

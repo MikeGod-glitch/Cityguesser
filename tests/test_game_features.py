@@ -1,12 +1,16 @@
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future
 from datetime import datetime
 from pathlib import Path
 import tempfile
+import json
 import unittest
 from unittest.mock import patch
 
 import app as game
+from app import start_question_prefetch as real_prefetch
 import game_features as features
+import daily_progress
+from itsdangerous import URLSafeSerializer
 
 
 class FeatureTests(unittest.TestCase):
@@ -80,17 +84,82 @@ class FeatureTests(unittest.TestCase):
         for name in game.CITY_PROFILES:
             self.assertEqual(2, len(features.question_hints(name)))
 
-    def test_daily_matches_across_players_modes_and_cache_changes(self):
+    def dynamic(self, name="Kyoto"):
+        return {"answer":name, "aliases":game.city_aliases[name], "image_id":f"commons:{name}",
+                "is_dynamic":True, "image_url":f"https://example.com/{name}.jpg",
+                "source_url":f"https://example.com/{name}", "credit":["Photographer", "CC BY 4.0"]}
+
+    def test_daily_uses_ordinary_dynamic_fetch_and_keeps_each_players_question(self):
+        with patch.object(game, "get_random_question", side_effect=[self.dynamic(), self.dynamic("Athens")]) as fetch:
+            self.start("daily")
+            first = self.question()
+            other = game.app.test_client()
+            self.start("daily", "choice", client=other)
+            self.assertEqual("Kyoto", first["answer"])
+            self.assertEqual("Athens", self.question(other)["answer"])
+            self.assertEqual(2, fetch.call_count)
+        with patch.object(game, "get_random_question", side_effect=AssertionError("Must keep current question")):
+            self.client.get("/play")
+            self.start("daily", "choice")
+        self.assertEqual(first, self.question())
+        self.assertEqual([], list(Path(game.app.config["DAILY_DIRECTORY"]).iterdir()))
+
+    def test_daily_next_uses_prefetched_dynamic_question_and_recent_history(self):
         self.start("daily")
         first = self.question()
-        other = game.app.test_client()
-        self.start("daily", "choice", client=other)
-        second = self.question(other)
-        self.assertEqual(first["image_id"], second["image_id"])
-        with patch.object(game, "build_daily_questions", side_effect=AssertionError("Must reuse manifest")):
+        self.client.post("/check", data={"question_id":first["question_id"], "guess":first["answer"]})
+        with patch.object(game, "get_prefetched_question", return_value=self.dynamic()) as prefetched:
+            self.client.get("/next")
+            prefetched.assert_called_once_with(consume=True)
+        self.assertEqual("Kyoto", self.question()["answer"])
+        q = self.question()
+        self.client.post("/check", data={"question_id":q["question_id"], "guess":"wrong"})
+        with patch.object(game, "get_cached_question", return_value=self.dynamic("Athens")) as cached:
+            self.client.get("/next")
+            self.assertIn(first["image_id"], cached.call_args.args[0])
+            self.assertIn("Kyoto", cached.call_args.args[1])
+
+    def test_daily_prefetch_fetches_dynamic_photos_but_stops_at_tenth_question(self):
+        future = Future()
+        future.set_result(self.dynamic())
+        with game.app.test_request_context(), patch.object(game._prefetch_executor, "submit", return_value=future) as submit:
+            game.session.update(game_mode="daily", recent_images=["seen-image"], recent_cities=["Tokyo"])
+            real_prefetch()
+            player_id = game.session["player_id"]
+            self.addCleanup(game._prefetches.pop, player_id, None)
+            submit.assert_called_once_with(game.get_random_question, ("seen-image",), ("Tokyo",))
+            self.assertEqual(self.dynamic(), game.get_prefetched_question(consume=True))
+            game.session["game_stats"] = {"answered":9}
+            real_prefetch()
+            self.assertEqual(1, submit.call_count)
+
+    def test_dynamic_daily_restores_full_question_choices_hints_and_history_without_files(self):
+        with patch.object(game, "get_random_question", return_value=self.dynamic()):
             self.start("daily", "choice")
-        self.assertEqual(second["choices"], self.question()["choices"])
-        self.assertEqual(first["answer"], self.question()["answer"])
+        q = self.question()
+        self.client.post("/check", data={"question_id":q["question_id"], "guess":q["answer"]})
+        with self.client.session_transaction() as state:
+            token = daily_progress.describe(state["daily_runs"][features.today()], game.app.secret_key)["token"]
+        other = game.app.test_client()
+        with patch.object(game, "get_random_question", side_effect=AssertionError("Must restore saved photo")):
+            self.start("daily", client=other, daily_token=token)
+        self.assertEqual(q, self.question(other))
+        with other.session_transaction() as state:
+            self.assertIn(q["image_id"], state["recent_images"])
+            self.assertIn(q["answer"], state["recent_cities"])
+            self.assertEqual(100, state["game_stats"]["score"])
+        # Text-mode hint bookkeeping must likewise survive signed restoration.
+        text = game.app.test_client()
+        with patch.object(game, "get_random_question", return_value=self.dynamic("Athens")):
+            self.start("daily", client=text)
+        q = self.question(text)
+        text.post("/check", data={"question_id":q["question_id"], "guess":q["answer"], "hint_level":2})
+        with text.session_transaction() as state:
+            token = daily_progress.describe(state["daily_runs"][features.today()], game.app.secret_key)["token"]
+        self.start("daily", client=other, daily_token=token)
+        with other.session_transaction() as state:
+            self.assertEqual(2, state["hint_level"])
+            self.assertEqual(1, state["game_stats"]["assisted"])
 
     def test_wrong_answers_with_hints_are_not_assisted_correct(self):
         self.start()
@@ -150,7 +219,7 @@ class FeatureTests(unittest.TestCase):
         q = self.question()
         self.client.post("/check", data={"question_id": q["question_id"], "guess": q["answer"]})
         with self.client.session_transaction() as state:
-            token = state["daily_runs"][features.today()]
+            token = daily_progress.describe(state["daily_runs"][features.today()], game.app.secret_key)["token"]
         other = game.app.test_client()
         self.start("daily", "text", client=other, daily_token=token)
         with other.session_transaction() as state:
@@ -164,7 +233,7 @@ class FeatureTests(unittest.TestCase):
         self.start("daily")
         q = self.question()
         with self.client.session_transaction() as state:
-            old = state["daily_runs"][features.today()]
+            old = daily_progress.describe(state["daily_runs"][features.today()], game.app.secret_key)["token"]
         self.client.post("/check", data={"question_id": q["question_id"], "guess": q["answer"]})
         self.client.get("/next")
         next_q = self.question()
@@ -187,7 +256,7 @@ class FeatureTests(unittest.TestCase):
     def test_tampered_browser_progress_is_not_restored(self):
         self.start("daily")
         with self.client.session_transaction() as state:
-            token = state["daily_runs"][features.today()]
+            token = daily_progress.describe(state["daily_runs"][features.today()], game.app.secret_key)["token"]
         other = game.app.test_client()
         self.start("daily", client=other, daily_token=token + "tampered")
         with other.session_transaction() as state:
@@ -218,14 +287,58 @@ class FeatureTests(unittest.TestCase):
             self.assertEqual("2026-10-05", features.today())
             clock.now.assert_called_once_with(features.BEIJING)
 
-    def test_concurrent_daily_builders_publish_one_complete_manifest(self):
-        def build(date):
-            return [{"answer": str(i), "image_id": str(i), "builder": date} for i in range(10)]
-        directory = game.app.config["DAILY_DIRECTORY"]
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            results = list(pool.map(lambda _: features.daily_questions(directory, "2026-10-04", build), range(8)))
-        self.assertTrue(all(result == results[0] for result in results))
-        self.assertEqual(1, len(list(Path(directory).iterdir())))
+    def test_legacy_snapshot_restores_original_photo_then_uses_shared_selection(self):
+        self.start("daily", "choice")
+        q = self.question()
+        with self.client.session_transaction() as state:
+            token = daily_progress.describe(state["daily_runs"][features.today()], game.app.secret_key)["token"]
+        payload = daily_progress.read(token, game.app.secret_key)
+        payload.pop("current_question")
+        payload["question_index"] = 0
+        token = URLSafeSerializer(game.app.secret_key, salt="daily-progress-v1").dumps(payload)
+        path = Path(game.app.config["DAILY_DIRECTORY"]) / f"{features.today()}.json"
+        path.write_text(json.dumps([q]), encoding="utf-8")
+        other = game.app.test_client()
+        self.start("daily", client=other, daily_token=token)
+        self.assertEqual(q, self.question(other))
+        other.post("/check", data={"question_id":q["question_id"], "guess":q["answer"]})
+        with patch.object(game, "get_cached_question", return_value=self.dynamic()):
+            other.get("/next")
+        self.assertEqual("Kyoto", self.question(other)["answer"])
+        # Removing the old file no longer affects the migrated browser snapshot.
+        path.unlink()
+        self.start("daily", client=other)
+        self.assertEqual("Kyoto", self.question(other)["answer"])
+
+    def test_missing_legacy_file_does_not_reset_progress(self):
+        self.start("daily")
+        q = self.question()
+        with self.client.session_transaction() as state:
+            token = daily_progress.describe(state["daily_runs"][features.today()], game.app.secret_key)["token"]
+        payload = daily_progress.read(token, game.app.secret_key)
+        payload.pop("current_question")
+        payload["question_index"] = 0
+        token = URLSafeSerializer(game.app.secret_key, salt="daily-progress-v1").dumps(payload)
+        other = game.app.test_client()
+        response = self.start("daily", client=other, daily_token=token)
+        self.assertEqual(409, response.status_code)
+        self.assertEqual(q, self.question())
+
+    def test_full_history_and_two_daily_snapshots_fit_the_session_cookie(self):
+        with self.client.session_transaction() as state:
+            state["recent_images"] = [game._photo_id(str(i)) for i in range(100)]
+            state["recent_cities"] = [city[0] for city in game.CITIES[:20]]
+        q = self.dynamic()
+        q["image_url"] += "?filename=" + "long_filename_" * 30
+        with patch.object(game, "get_random_question", return_value=q), patch.object(game, "today", return_value="2026-10-05"):
+            self.start("daily")
+        with patch.object(game, "get_random_question", return_value=self.dynamic("Athens")), patch.object(game, "today", return_value="2026-10-06"):
+            response = self.start("daily")
+        for header in response.headers.getlist("Set-Cookie"):
+            self.assertLess(len(header), 4093)
+        with self.client.session_transaction() as state:
+            self.assertEqual(2, len(state["daily_runs"]))
+            self.assertEqual("Athens", state["current_question"]["answer"])
 
     def test_endless_has_assistance_stats_but_never_creates_a_best_score_payload(self):
         self.start("endless")

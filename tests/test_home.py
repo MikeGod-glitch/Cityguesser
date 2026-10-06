@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import app as game
+from question_fixtures import dynamic_question
 
 
 class HomePageTests(unittest.TestCase):
@@ -10,6 +11,7 @@ class HomePageTests(unittest.TestCase):
         self.client = game.app.test_client()
         for name, options in (
             ("get_random_question", {"return_value": None}),
+            ("get_cached_question", {"side_effect": dynamic_question}),
             ("start_question_prefetch", {}),
         ):
             mocked = patch.object(game, name, **options)

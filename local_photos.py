@@ -1,4 +1,7 @@
-"""Fixed fallback photo sources and credits, kept in game-pool order."""
+"""Legacy photo metadata for saved questions and independent static assets.
+
+These photos are no longer selected for new gameplay questions.
+"""
 
 from pathlib import Path
 from urllib.parse import quote

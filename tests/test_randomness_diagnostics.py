@@ -50,7 +50,7 @@ class DiagnosticMetricTests(unittest.TestCase):
         recorder = diagnostic.Recorder()
         city = ("Diagnostic city", [], 0, 0)
         diagnostic.provider._photo_cache.pop(city[0], None)
-        with patch.object(diagnostic.provider, "_api_get", return_value={"error":{"code":"urlparamnormal", "info":"bad thumbnail"}}):
+        with patch("photo_sources.time.sleep"), patch.object(diagnostic.provider, "_api_get", return_value={"error":{"code":"urlparamnormal", "info":"bad thumbnail"}}):
             with recorder.patches():
                 try:
                     diagnostic.provider._fetch_photos(city)

@@ -5,6 +5,7 @@ from unittest.mock import patch
 from xml.etree import ElementTree
 
 import app as game
+from question_fixtures import dynamic_question
 from city_choices import CITY_PROFILES, generate_choices
 from city_provider import CITIES
 
@@ -59,7 +60,7 @@ class MultipleChoiceFlowTests(unittest.TestCase):
         self.prefetch = patch.object(game, "start_question_prefetch")
         self.prefetch.start()
         self.addCleanup(self.prefetch.stop)
-        self.dynamic = patch.object(game, "get_random_question", return_value=None)
+        self.dynamic = patch.object(game, "get_cached_question", side_effect=dynamic_question)
         self.dynamic.start()
         self.addCleanup(self.dynamic.stop)
         self.ready = patch.object(game, "get_prefetched_question", return_value=None)

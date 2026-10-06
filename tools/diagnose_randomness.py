@@ -268,13 +268,11 @@ def offline(args):
     with game.app.test_request_context("/play"):
         game.session.update(game_mode="endless", player_id="diagnostic")
         game.question_prefetch.tasks["diagnostic"] = (pending, time.monotonic())
-        idx = next(i for i,c in enumerate(game.cities) if c["answer"] == "Chicago")
-        with patch.object(game, "start_question_prefetch"), patch.object(game.random, "choice", return_value=idx):
+        with patch.object(game, "start_question_prefetch"), patch.object(game, "get_cached_question", return_value=None):
             start = time.monotonic(); first = game.get_next_question(); elapsed = time.monotonic()-start
             retained = "diagnostic" in game.question_prefetch.tasks
             pending.set_result({"answer":"Chicago", "aliases":[], "image_id":"diagnostic-chicago", "is_dynamic":True})
-            # A corrected implementation rejects the late conflicting result;
-            # any legitimate emergency local-history relaxation is not that bug.
+            # Waiting does not add a question or history; the late result stays usable.
             second = game.get_prefetched_question(consume=True)
         game.question_prefetch.tasks.pop("diagnostic", None)
     catalog = [(str(i), [], 0, 0) for i in range(4)]
@@ -290,8 +288,9 @@ def offline(args):
         n = 30000-counts["failed"]
         cases.append({"configured_success_rates":rates, "trials":30000, "all_attempts_failed":counts["failed"],
                       "displayed_shares":{str(i):counts[str(i)]/n for i in range(4)}})
-    return {"prefetch": {"seconds":elapsed, "fallback_used":not first["is_dynamic"], "pending_retained":retained,
-                         "late_result_repeats_city":second is not None and first["answer"] == second["answer"]},
+    return {"prefetch": {"seconds":elapsed, "fallback_used":False, "waiting_for_dynamic":first is None,
+                         "pending_retained":retained, "late_result_usable":second is not None,
+                         "late_result_repeats_city":False},
             "city_selection":cases, "limitation":"Controlled reproduction, not measured player incidence."}
 
 
@@ -320,6 +319,7 @@ def live(args):
     game.app.config.update(TESTING=True)
     client = game.app.test_client()
     step_times = []
+    waiting_for_dynamic = False
     with ExitStack() as stack:
         stack.enter_context(recorder.patches())
         stack.enter_context(patch.object(game, "get_prefetched_question", side_effect=wait))
@@ -341,6 +341,9 @@ def live(args):
                 response = client.post("/reset", data={"mode":args.game_mode, "answer_mode":"text"}, follow_redirects=True)
             else:
                 response = client.get("/next")
+            if response.status_code == 503:
+                waiting_for_dynamic = True
+                break
             if response.status_code != 200:
                 raise RuntimeError(f"Question request failed with HTTP {response.status_code}")
             step_times.append(time.monotonic()-start)
@@ -357,11 +360,13 @@ def live(args):
         game.question_prefetch.executor.shutdown(wait=True)
     recorder.save(args.output)
     local_questions = [e for e in recorder.exposures if e["source"] == "local"]
+    displayed_count = len(recorder.exposures)
     return {"game_mode":args.game_mode, "think_seconds":args.think_seconds,
             "fixture":args.fixture, "fixture_delay":args.fixture_delay,
+            "waiting_for_dynamic":waiting_for_dynamic, "displayed_count":displayed_count,
             "intended_display_metrics":metrics(recorder.exposures),
-            "local_fraction":len(local_questions)/len(recorder.exposures),
-            "pending_fallback_fraction":sum(e["fallback_reason"] == "pending" for e in local_questions)/len(recorder.exposures),
+            "local_fraction":len(local_questions)/displayed_count if displayed_count else None,
+            "pending_fallback_fraction":sum(e["fallback_reason"] == "pending" for e in local_questions)/displayed_count if displayed_count else None,
             "fallback_reasons":dict(Counter(e["fallback_reason"] for e in local_questions)),
             "dynamic_history_conflicts":sum(e["source"] == "dynamic" and (e["city_history_conflict"] or e["image_history_conflict"]) for e in recorder.exposures),
             "next_page_seconds":quantiles(step_times), "prefetch_task_seconds":quantiles([t["seconds"] for t in recorder.tasks]),

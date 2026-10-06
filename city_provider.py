@@ -13,6 +13,8 @@ from urllib.request import Request, urlopen
 
 from city_catalog import CITIES
 from photo_rules import photo_id as _photo_id, photo_family_key as _photo_family_key, photo_score as _photo_score
+from photo_sources import collect_city_photos
+import photo_statistics
 
 
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
@@ -102,6 +104,11 @@ def _clean_metadata(value, default="Unknown"):
     return (text or default)[:240]
 
 
+def commons_retry_delay():
+    with _cache_lock:
+        return max(0, _api_retry_after.get(COMMONS_API, 0) - time.time())
+
+
 def _fetch_photos(city):
     # Single flight per city: concurrent players do not rebuild the same pool.
     with _cache_lock:
@@ -159,6 +166,7 @@ def _select_photo_candidates(city, pages):
             "image_url": info.get("thumburl"),
             "source_url": info.get("descriptionurl", ""),
             "_quality": (score, width * height),
+            "scene_key": _scene_key(city, title, categories),
         }
         family = _photo_family_key(title)
         existing = photo_families.get(family)
@@ -172,23 +180,31 @@ def _select_photo_candidates(city, pages):
     return photos
 
 
+def _scene_key(city, title, categories):
+    """Recognize named places from metadata, falling back to the filename family."""
+    title_text = title.casefold()
+    labels = []
+    for category in categories:
+        label = category.removeprefix("Category:").casefold()
+        for name in [city[0], *city[1]]:
+            label = label.replace(name.casefold(), " ")
+        label = re.sub(r"[^\w\s]", " ", label)
+        label = " ".join(label.split())
+        if len(label) >= 4 and label in title_text and not re.search(
+            r"\b(?:in|of|by|photograph|image|winter|summer|spring|autumn|night)\b", label
+        ):
+            labels.append(label)
+    return max(labels, key=len) if labels else _photo_family_key(title)
+
+
 def _refresh_photos(city, stale_cache=None):
-    name, _aliases, lat, lon = city
-    data = _api_get({
-        "action": "query",
-        "generator": "geosearch",
-        "ggsprimary": "all",
-        "ggsnamespace": 6,
-        "ggsradius": 5000,
-        "ggslimit": PHOTO_CANDIDATE_LIMIT,
-        "ggscoord": f"{lat}|{lon}",
-        "prop": "categories|imageinfo",
-        "cllimit": "max",
-        "clshow": "!hidden",
-        "iiprop": "url|size|mime",
-    })
-    _check_api_data(data)
-    photos = _select_photo_candidates(city, data.get("query", {}).get("pages", []))
+    name = city[0]
+    photos, discovery = collect_city_photos(
+        city, lambda params: _check_api_data(_api_get(params)),
+        _select_photo_candidates, commons_retry_delay,
+        limit=PHOTO_CANDIDATE_LIMIT,
+    )
+    photo_statistics.record(name, "discovery", candidates=len(photos), **discovery)
 
     if not photos and stale_cache:
         with _cache_lock:
@@ -299,7 +315,7 @@ def get_city_intro(city):
     }
 
 
-def _prepare_city_question(city, excluded):
+def _prepare_city_question(city, excluded, seen_images=()):
     """Try a bounded number of files, isolating thumbnail failures within this city."""
     photos = [
         photo.copy() for photo in _fetch_photos(city)
@@ -307,8 +323,17 @@ def _prepare_city_question(city, excluded):
     ]
     with _cache_lock:
         photos = [photo for photo in photos if _thumbnail_retry_after.get(photo["title"], 0) <= time.time()]
+        stocked_scenes = {}
+        for entry in _prepared_questions.get(city[0], {}).values():
+            if entry["expires_at"] > time.time():
+                key = entry["question"].get("scene_key", entry["question"]["image_id"])
+                stocked_scenes[key] = stocked_scenes.get(key, 0) + 1
+    unseen = [photo for photo in photos if _photo_id(photo["title"]) not in seen_images]
+    photos = unseen or photos
     for _ in range(min(PHOTO_PREPARE_ATTEMPTS, len(photos))):
-        photo = random.choice(photos)
+        minimum = min(stocked_scenes.get(photo.get("scene_key", photo["title"]), 0) for photo in photos)
+        photo = random.choice([photo for photo in photos
+                               if stocked_scenes.get(photo.get("scene_key", photo["title"]), 0) == minimum])
         photos.remove(photo)
         try:
             photo = _add_credit(photo)
@@ -329,6 +354,7 @@ def _prepare_city_question(city, excluded):
             "credit": [photo.get("author", "Wikimedia contributor"), photo.get("license", "See source for license")],
             "image_id": _photo_id(photo["title"]),
             "is_dynamic": True,
+            "scene_key": photo.get("scene_key", _photo_family_key(photo["title"])),
         }
         with _cache_lock:
             _prepared_questions.setdefault(name, {})[question["image_id"]] = {
@@ -338,22 +364,30 @@ def _prepare_city_question(city, excluded):
     return None
 
 
-def get_random_question(excluded_images=(), excluded_cities=()):
+def get_city_question(city, excluded_images=(), *, seen_images=()):
+    """Prepare one named city so reservoir failures cannot discard other cities."""
+    try:
+        question = _prepare_city_question(city, set(excluded_images), set(seen_images))
+        photo_statistics.record(city[0], "prepared" if question else "no_eligible_photo")
+        return question
+    except (OSError, ValueError, KeyError) as exc:
+        photo_statistics.record(city[0], "prepare_error", last_error=str(exc))
+        return None
+
+
+def get_random_question(excluded_images=(), excluded_cities=(), *, seen_images=()):
     """Return the first prepared question from randomly ordered candidate cities."""
     excluded = set(excluded_images)
     excluded_names = set(excluded_cities)
     available_cities = [city for city in CITIES if city[0] not in excluded_names] or CITIES
     for city in random.sample(available_cities, k=min(DYNAMIC_CITY_ATTEMPTS, len(available_cities))):
-        try:
-            question = _prepare_city_question(city, excluded)
-            if question is not None:
-                return question
-        except (OSError, ValueError, KeyError):
-            continue
-    return get_cached_question(excluded_images, excluded_cities)
+        question = get_city_question(city, excluded, seen_images=seen_images)
+        if question is not None:
+            return question
+    return get_cached_question(excluded_images, excluded_cities, seen_images=seen_images)
 
 
-def get_cached_question(excluded_images=(), excluded_cities=()):
+def get_cached_question(excluded_images=(), excluded_cities=(), *, seen_images=()):
     """Pick an already prepared photo without any network calls or history relaxation."""
     excluded = set(excluded_images)
     excluded_names = set(excluded_cities)
@@ -370,4 +404,59 @@ def get_cached_question(excluded_images=(), excluded_cities=()):
                     candidates[name] = eligible
         if not candidates:
             return None
-        return random.choice(candidates[random.choice(list(candidates))]).copy()
+        photos = candidates[random.choice(list(candidates))]
+        unseen = [question for question in photos if question["image_id"] not in seen_images]
+        return random.choice(unseen or photos).copy()
+
+
+def has_unseen_cached(city, excluded_images, seen_images):
+    excluded = set(excluded_images) | set(seen_images)
+    with _cache_lock:
+        return any(image_id not in excluded and entry["expires_at"] > time.time()
+                   for image_id, entry in _prepared_questions.get(city, {}).items())
+
+
+def prepared_question_snapshot():
+    """Copy unexpired prepared questions for replenishment and disk storage."""
+    now = time.time()
+    with _cache_lock:
+        return [
+            {"question": entry["question"].copy(), "expires_at": entry["expires_at"]}
+            for photos in _prepared_questions.values() for entry in photos.values()
+            if entry["expires_at"] > now
+        ]
+
+
+def restore_prepared_questions(entries):
+    """Restore valid dynamic questions without extending their original lifetime."""
+    names = {city[0] for city in CITIES}
+    now = time.time()
+    if not isinstance(entries, list):
+        return
+    with _cache_lock:
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            question = entry.get("question")
+            expires_at = entry.get("expires_at")
+            if (not isinstance(question, dict)
+                    or not isinstance(expires_at, (int, float))
+                    or not now < expires_at <= now + CACHE_TTL_SECONDS
+                    or not isinstance(question.get("answer"), str)
+                    or question["answer"] not in names
+                    or question.get("is_dynamic") is not True
+                    or not all(isinstance(question.get(key), str) and question[key]
+                               for key in ("image_id", "image_url"))
+                    or not isinstance(question.get("aliases"), list)
+                    or not isinstance(question.get("credit"), list)
+                    or len(question["credit"]) != 2
+                    or not all(isinstance(value, str) for value in question["credit"])
+                    or not all(isinstance(value, str) for value in question["aliases"])
+                    or not isinstance(question.get("scene_key", ""), str)):
+                continue
+            photos = _prepared_questions.setdefault(question["answer"], {})
+            existing = photos.get(question["image_id"])
+            if existing is None or existing["expires_at"] < expires_at:
+                photos[question["image_id"]] = {
+                    "question": question.copy(), "expires_at": expires_at,
+                }

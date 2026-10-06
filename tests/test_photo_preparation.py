@@ -23,6 +23,9 @@ def question(city="Paris", image="ready-photo"):
 
 class PhotoPreparationTests(unittest.TestCase):
     def setUp(self):
+        pause = patch("photo_sources.time.sleep")
+        pause.start()
+        self.addCleanup(pause.stop)
         self.city = next(c for c in provider.CITIES if c[0] == "Paris")
         for cache in (provider._photo_cache, provider._credit_cache, provider._prepared_questions,
                       provider._photo_retry_after, provider._thumbnail_retry_after, provider._api_retry_after):
@@ -67,7 +70,7 @@ class PhotoPreparationTests(unittest.TestCase):
             self.assertEqual(pool,provider._fetch_photos(self.city))
             self.assertEqual(pool,provider._fetch_photos(self.city))
         self.assertIs(cached,provider._photo_cache["Paris"])
-        self.assertEqual(1,api.call_count)
+        self.assertEqual(5,api.call_count)
 
     def test_retry_after_suppresses_subsequent_http_requests(self):
         error = HTTPError("https://example.test",429,"limited",{"Retry-After":"28"},None)
@@ -151,7 +154,6 @@ class PrefetchHistoryTests(unittest.TestCase):
         pending = self.seed()
         cached = question("Tokyo","unused")
         with patch.object(game,"get_cached_question",return_value=cached), \
-             patch.object(game,"get_local_question",side_effect=AssertionError("must use ready photo")), \
              patch.object(game,"start_question_prefetch"):
             result = game.get_next_question()
         self.assertEqual("Tokyo",result["answer"])
@@ -167,11 +169,10 @@ class PrefetchHistoryTests(unittest.TestCase):
 
     def test_no_prepared_photo_keeps_wait_bounded_and_pending_task_alive(self):
         pending = self.seed()
-        with patch.object(game,"get_cached_question",return_value=None), patch.object(game,"start_question_prefetch"), \
-             patch.object(game,"get_local_question",return_value=question("London","local")):
+        with patch.object(game,"get_cached_question",return_value=None), patch.object(game,"start_question_prefetch"):
             before = time.monotonic()
             result = game.get_next_question()
-        self.assertEqual("London",result["answer"])
+        self.assertIsNone(result)
         self.assertLess(time.monotonic()-before,1)
         self.assertIs(pending,game.question_prefetch.tasks["prefetch-test"][0])
 

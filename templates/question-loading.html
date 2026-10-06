@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b1720">
+    <meta http-equiv="refresh" content="5;url={{ retry_url }}">
+    <title>Finding your next city · City Guesser</title>
+    {% include 'theme-bootstrap.html' %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="{{ url_for('static', filename='script.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='records.js') }}" defer></script>
+    {% include 'sound-scripts.html' %}
+</head>
+<body data-daily-date="{{ daily_date }}" data-answer-mode="{{ answer_mode }}" data-game-mode="{{ game_mode }}">
+    <script id="daily-runs-data" type="application/json">{{ daily_runs | tojson }}</script>
+    <div class="page-shell">
+        <header class="site-header">
+            {% from 'brand.html' import brand %}
+            {{ brand(url_for('home')) }}
+            {% include 'theme-toggle.html' %}
+            {% include 'sound-toggle.html' %}
+        </header>
+        <main class="answer-panel question-loading" aria-labelledby="loading-title">
+            <div class="panel-content">
+                <p class="question-progress">Score {{ stats.score }} · Played {{ stats.answered }}</p>
+                <h1 id="loading-title">Finding your next city</h1>
+                <p class="mode-hint" role="status">A fresh photo is on its way. If the photo service is unavailable, we'll keep trying. Your progress is saved.</p>
+                <div class="result-actions">
+                    <a class="primary-button" href="{{ retry_url }}">Try again</a>
+                    <a class="secondary-button" href="{{ url_for('home') }}">Back home</a>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

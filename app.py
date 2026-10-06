@@ -1,18 +1,22 @@
 from pathlib import Path
+from functools import partial
 import json
 import os
-import random
 import secrets
 
 from flask import Flask, abort, redirect, render_template, request, session, url_for
 
 from city_catalog import CITIES, CITY_PROFILES
-from local_photos import COMMONS as commons, QUESTIONS as cities, question_image_context
-from city_provider import get_city_intro, get_random_question, get_cached_question
+from local_photos import COMMONS as commons, question_image_context
+from city_provider import get_city_intro, get_random_question, get_cached_question as _get_cached_question
+from city_provider import has_unseen_cached
 from photo_rules import photo_id as _photo_id
 from city_choices import generate_choices
 from game_features import question_hints, today
 from question_prefetch import QuestionPrefetch
+from dynamic_pool import DynamicQuestionPool
+from photo_rotation import PhotoRotation
+import photo_statistics
 import daily_progress
 
 app = Flask(__name__)
@@ -26,6 +30,14 @@ RECENT_IMAGE_HISTORY_LENGTH = 100
 GAME_MODES = {"challenge", "endless", "daily"}
 ANSWER_MODES = {"text", "choice"}
 question_prefetch = QuestionPrefetch(ttl_seconds=PREFETCH_TTL_SECONDS)
+dynamic_pool = DynamicQuestionPool(Path(app.instance_path) / "prepared-questions.json")
+question_rotation = PhotoRotation()
+
+
+@app.before_request
+def replenish_dynamic_questions():
+    if not app.testing and request.endpoint != "static":
+        dynamic_pool.start()
 
 city_aliases = {name: aliases for name, aliases, _lat, _lon in CITIES}
 city_coordinates = {name: (lat, lon) for name, _aliases, lat, lon in CITIES}
@@ -38,25 +50,6 @@ city_flag_lookup = {
     for name, aliases, _lat, _lon in CITIES
     for label in [name, *aliases]
 }
-
-
-def get_local_question():
-    if "remaining" not in session or not session["remaining"]:
-        session["remaining"] = list(range(len(cities)))
-
-    recent_cities = set(session.get("recent_cities", []))
-    remaining = list(session["remaining"])
-    eligible = [idx for idx in remaining if cities[idx]["answer"] not in recent_cities]
-    if not eligible:
-        eligible = remaining
-    idx = random.choice(eligible)
-    remaining.remove(idx)
-    session["remaining"] = remaining
-    city = cities[idx].copy()
-    city["aliases"] = city_aliases.get(city["answer"], [])
-    city["image_id"] = _photo_id("File:" + city["commons"])
-    city["is_dynamic"] = False
-    return city
 
 
 def remember_question(city):
@@ -72,6 +65,8 @@ def remember_question(city):
     recent_cities.append(city["answer"])
     session["recent_cities"] = recent_cities[-RECENT_HISTORY_LENGTH:]
     session["current_question"] = city
+    question_rotation.record(get_player_id(), city["answer"], city.get("image_id"))
+    photo_statistics.record(city["answer"], "display", image_id=city.get("image_id"))
     session["question_resolved"] = False
     for key in ("question_result", "question_points", "question_revealed", "selected_choice", "hint_level"):
         session.pop(key, None)
@@ -79,17 +74,19 @@ def remember_question(city):
 
 
 def get_new_question():
-    recent_images = session.get("recent_images", [])
-    recent_cities = session.get("recent_cities", [])
-    city = (get_cached_question(recent_images, recent_cities)
-            or get_random_question(recent_images, recent_cities) or get_local_question())
-    return remember_question(city)
+    return get_next_question()
 
 
 def get_player_id():
     if "player_id" not in session:
         session["player_id"] = secrets.token_urlsafe(12)
     return session["player_id"]
+
+
+def get_cached_question(excluded_images=(), excluded_cities=()):
+    return _get_cached_question(
+        excluded_images, excluded_cities, seen_images=question_rotation.seen(get_player_id()),
+    )
 
 
 def get_current_question():
@@ -192,10 +189,11 @@ def save_question_outcome(result=None, points=0, revealed=False):
 def start_question_prefetch():
     if is_challenge_complete() or (
         get_game_mode() != "endless" and get_question_number() >= CHALLENGE_LENGTH
+        and get_current_question() and not session.get("question_resolved")
     ):
         return
     question_prefetch.start(
-        get_player_id(), get_random_question,
+        get_player_id(), partial(get_random_question, seen_images=question_rotation.seen(get_player_id())),
         tuple(session.get("recent_images", [])), tuple(session.get("recent_cities", [])),
         question_conflicts_with_history,
     )
@@ -209,12 +207,16 @@ def get_prefetched_question(wait_seconds=0, consume=False):
 
 
 def question_conflicts_with_history(city):
-    return (city["answer"] in session.get("recent_cities", [])
-            or city.get("image_id") in session.get("recent_images", []))
+    recent_images = session.get("recent_images", [])
+    if city["answer"] in session.get("recent_cities", []) or city.get("image_id") in recent_images:
+        return True
+    seen = question_rotation.seen(get_player_id())
+    return (city.get("image_id") in seen
+            and has_unseen_cached(city["answer"], recent_images, seen))
 
 
 def get_next_question():
-    # Use prepared photos before waiting or falling back to the fixed local pool.
+    # Keep pending work alive; an empty dynamic supply never creates a fixed question.
     city = get_prefetched_question(consume=True)
     if city is None:
         city = get_cached_question(session.get("recent_images", []), session.get("recent_cities", []))
@@ -223,9 +225,20 @@ def get_next_question():
         city = get_prefetched_question(PREFETCH_WAIT_SECONDS, consume=True)
     if city is None:
         city = get_cached_question(session.get("recent_images", []), session.get("recent_cities", []))
-    city = remember_question(city or get_local_question())
+    if city is None:
+        return None
+    city = remember_question(city)
     start_question_prefetch()
     return city
+
+
+def render_question_loading():
+    retry_url = url_for("next_question" if get_current_question() else "play")
+    return render_template(
+        "question-loading.html", retry_url=retry_url,
+        stats=get_game_stats(), game_mode=get_game_mode(),
+        answer_mode=get_answer_mode(), daily_date=session.get("daily_date", today()),
+    ), 503, {"Retry-After": "5", "Cache-Control": "no-store"}
 
 
 def get_daily_resume(runs, day):
@@ -270,10 +283,13 @@ def start_new_game(mode="challenge", answer_mode=None):
     runs = dict(session.get("daily_runs", {}))
     day = request.form.get("daily_date", today()) if mode == "daily" else today()
     saved = get_daily_resume(runs, day) if mode == "daily" else None
-    if session.get("player_id"):
-        question_prefetch.cancel(session["player_id"])
+    player_id = session.get("player_id")
+    if player_id:
+        question_prefetch.cancel(player_id)
     histories = preserved_history(saved)
     session.clear()
+    if player_id:
+        session["player_id"] = player_id
     session["game_mode"] = mode
     session["answer_mode"] = answer_mode
     if runs:
@@ -403,6 +419,8 @@ def play():
     if is_challenge_complete():
         return redirect(url_for("results"))
     city = get_current_question() or get_new_question()
+    if city is None:
+        return render_question_loading()
     start_question_prefetch()
     if session.get("question_resolved"):
         return render_saved_outcome(city)
@@ -443,6 +461,8 @@ def submission_question():
     city = get_current_question()
     if not city:
         city = get_new_question()
+        if city is None:
+            return None, render_question_loading()
         start_question_prefetch()
         return city, render_question(city)
     if request.form.get("question_id") != city["question_id"] or session.get("question_resolved"):
@@ -481,7 +501,8 @@ def next_question():
         return redirect(url_for("results"))
     if get_current_question() and not session.get("question_resolved"):
         return redirect(url_for("play"))
-    return render_question(get_next_question())
+    city = get_next_question()
+    return render_question(city) if city is not None else render_question_loading()
 
 
 @app.route("/results")

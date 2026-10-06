@@ -6,7 +6,8 @@ from xml.etree import ElementTree
 import app as game_app
 import city_provider
 from city_provider import CITIES
-from local_photos import CREDITS
+from local_photos import CREDITS, COMMONS, QUESTIONS
+from question_fixtures import dynamic_question
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +16,9 @@ IMAGE_DIR = PROJECT_ROOT / "static" / "images"
 
 class CityCatalogTests(unittest.TestCase):
     def setUp(self):
+        pause = patch("photo_sources.time.sleep")
+        pause.start()
+        self.addCleanup(pause.stop)
         city_provider._prepared_questions.clear()
 
     def tearDown(self):
@@ -35,14 +39,14 @@ class CityCatalogTests(unittest.TestCase):
                 self.assertGreaterEqual(longitude, -180)
                 self.assertLessEqual(longitude, 180)
 
-    def test_local_fallback_is_a_catalog_subset_with_existing_images(self):
+    def test_legacy_photo_metadata_is_a_catalog_subset_with_existing_images(self):
         catalog_names = {name for name, _aliases, _lat, _lon in CITIES}
-        self.assertEqual(20, len(game_app.commons))
+        self.assertEqual(20, len(COMMONS))
         self.assertEqual(
-            set(game_app.commons),
-            {city["answer"] for city in game_app.cities},
+            set(COMMONS),
+            {city["answer"] for city in QUESTIONS},
         )
-        for city in game_app.cities:
+        for city in QUESTIONS:
             with self.subTest(city=city["answer"]):
                 self.assertIn(city["answer"], catalog_names)
                 self.assertIn("commons", city)
@@ -55,14 +59,11 @@ class CityCatalogTests(unittest.TestCase):
             self.assertFalse((IMAGE_DIR / f"{name}.png").exists())
             self.assertTrue((IMAGE_DIR / f"{name}.svg").is_file())
 
-    def test_homepage_and_answer_flow_work_offline(self):
-        fallback = game_app.cities[0] | {
-            "aliases": ["芝加哥"],
-            "is_dynamic": False,
-        }
+    def test_cached_dynamic_photo_and_answer_flow_work_offline(self):
+        prepared = dynamic_question(name="Chicago")
         game_app.app.config.update(TESTING=True, SECRET_KEY="test-secret")
         with patch.object(game_app, "get_random_question", return_value=None), patch.object(
-            game_app, "get_local_question", return_value=fallback.copy()
+            game_app, "get_cached_question", return_value=prepared.copy()
         ), patch.object(game_app, "start_question_prefetch", return_value=None):
             client = game_app.app.test_client()
             response = client.get("/play")
@@ -161,7 +162,7 @@ class CityCatalogTests(unittest.TestCase):
             self.assertEqual(1, len(photos))
             self.assertEqual(
                 city_provider.PHOTO_CANDIDATE_LIMIT,
-                api_get.call_args.args[0]["ggslimit"],
+                api_get.call_args_list[0].args[0]["ggslimit"],
             )
         finally:
             with city_provider._cache_lock:
@@ -226,9 +227,7 @@ class GameModeTests(unittest.TestCase):
         self.client = game_app.app.test_client()
 
     def seed_question(self, *, mode="challenge", answered=0, correct=0, score=0, streak=0, best=0):
-        city = game_app.cities[0] | {
-            "aliases": ["芝加哥"],
-            "is_dynamic": False,
+        city = dynamic_question(name="Chicago") | {
             "question_id": "question-token",
         }
         with self.client.session_transaction() as session:

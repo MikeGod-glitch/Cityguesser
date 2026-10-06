@@ -92,7 +92,7 @@ def main():
             print(f"ERROR: {error}")
         return 1
 
-    print(f"Catalog OK: {len(CITIES)} curated cities, {len(local_cities)} local fallbacks")
+    print(f"Catalog OK: {len(CITIES)} curated cities, {len(local_cities)} legacy photo assets")
     if args.check_commons:
         start = max(args.start - 1, 0)
         selected = CITIES[start:]

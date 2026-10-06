@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 import app as game
+from question_fixtures import dynamic_question
 
 
 def events(response):
@@ -17,7 +18,8 @@ class SoundEventTests(unittest.TestCase):
         self.client = game.app.test_client()
         game.app.config['TESTING'] = True
         for name in ('get_cached_question', 'get_random_question', 'start_question_prefetch'):
-            mocked = patch.object(game, name, return_value=None)
+            mocked = (patch.object(game, name, side_effect=dynamic_question) if name == 'get_cached_question'
+                      else patch.object(game, name, return_value=None))
             mocked.start()
             self.addCleanup(mocked.stop)
         mocked = patch.object(game, 'get_city_intro', return_value={'text': 'A city.', 'source_url': None})

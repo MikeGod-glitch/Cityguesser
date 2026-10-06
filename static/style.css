@@ -417,3 +417,7 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
     .daily-result-highlight { animation: none; }
     *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+.question-loading {
+    max-width: 720px;
+    margin: 10vh auto;
+}

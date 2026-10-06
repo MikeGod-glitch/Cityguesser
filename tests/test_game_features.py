@@ -10,6 +10,7 @@ import app as game
 from app import start_question_prefetch as real_prefetch
 import game_features as features
 import daily_progress
+from question_fixtures import dynamic_question
 from itsdangerous import URLSafeSerializer
 
 
@@ -21,7 +22,8 @@ class FeatureTests(unittest.TestCase):
         self.addCleanup(game.app.config.pop, "DAILY_DIRECTORY", None)
         self.client = game.app.test_client()
         for name in ("get_cached_question", "get_random_question", "start_question_prefetch"):
-            mock = patch.object(game, name, return_value=None)
+            mock = (patch.object(game, name, side_effect=dynamic_question) if name == "get_cached_question"
+                    else patch.object(game, name, return_value=None))
             mock.start()
             self.addCleanup(mock.stop)
         intro = patch.object(game, "get_city_intro", return_value={"text": "A city.", "source_url": None})
@@ -90,7 +92,7 @@ class FeatureTests(unittest.TestCase):
                 "source_url":f"https://example.com/{name}", "credit":["Photographer", "CC BY 4.0"]}
 
     def test_daily_uses_ordinary_dynamic_fetch_and_keeps_each_players_question(self):
-        with patch.object(game, "get_random_question", side_effect=[self.dynamic(), self.dynamic("Athens")]) as fetch:
+        with patch.object(game, "get_cached_question", side_effect=[self.dynamic(), self.dynamic("Athens")]) as fetch:
             self.start("daily")
             first = self.question()
             other = game.app.test_client()
@@ -98,7 +100,7 @@ class FeatureTests(unittest.TestCase):
             self.assertEqual("Kyoto", first["answer"])
             self.assertEqual("Athens", self.question(other)["answer"])
             self.assertEqual(2, fetch.call_count)
-        with patch.object(game, "get_random_question", side_effect=AssertionError("Must keep current question")):
+        with patch.object(game, "get_cached_question", side_effect=AssertionError("Must keep current question")):
             self.client.get("/play")
             self.start("daily", "choice")
         self.assertEqual(first, self.question())
@@ -127,21 +129,26 @@ class FeatureTests(unittest.TestCase):
             real_prefetch()
             player_id = game.session["player_id"]
             self.addCleanup(game.question_prefetch.tasks.pop, player_id, None)
-            submit.assert_called_once_with(game.get_random_question, ("seen-image",), ("Tokyo",))
+            fetch, images, cities = submit.call_args.args
+            self.assertIs(fetch.func, game.get_random_question)
+            self.assertEqual({"seen_images": ()}, fetch.keywords)
+            self.assertEqual((("seen-image",), ("Tokyo",)), (images, cities))
             self.assertEqual(self.dynamic(), game.get_prefetched_question(consume=True))
             game.session["game_stats"] = {"answered":9}
+            game.session["current_question"] = self.dynamic()
+            game.session["question_resolved"] = False
             real_prefetch()
             self.assertEqual(1, submit.call_count)
 
     def test_dynamic_daily_restores_full_question_choices_hints_and_history_without_files(self):
-        with patch.object(game, "get_random_question", return_value=self.dynamic()):
+        with patch.object(game, "get_cached_question", return_value=self.dynamic()):
             self.start("daily", "choice")
         q = self.question()
         self.client.post("/check", data={"question_id":q["question_id"], "guess":q["answer"]})
         with self.client.session_transaction() as state:
             token = daily_progress.describe(state["daily_runs"][features.today()], game.app.secret_key)["token"]
         other = game.app.test_client()
-        with patch.object(game, "get_random_question", side_effect=AssertionError("Must restore saved photo")):
+        with patch.object(game, "get_cached_question", side_effect=AssertionError("Must restore saved photo")):
             self.start("daily", client=other, daily_token=token)
         self.assertEqual(q, self.question(other))
         with other.session_transaction() as state:
@@ -150,7 +157,7 @@ class FeatureTests(unittest.TestCase):
             self.assertEqual(100, state["game_stats"]["score"])
         # Text-mode hint bookkeeping must likewise survive signed restoration.
         text = game.app.test_client()
-        with patch.object(game, "get_random_question", return_value=self.dynamic("Athens")):
+        with patch.object(game, "get_cached_question", return_value=self.dynamic("Athens")):
             self.start("daily", client=text)
         q = self.question(text)
         text.post("/check", data={"question_id":q["question_id"], "guess":q["answer"], "hint_level":2})
@@ -330,9 +337,9 @@ class FeatureTests(unittest.TestCase):
             state["recent_cities"] = [city[0] for city in game.CITIES[:20]]
         q = self.dynamic()
         q["image_url"] += "?filename=" + "long_filename_" * 30
-        with patch.object(game, "get_random_question", return_value=q), patch.object(game, "today", return_value="2026-10-05"):
+        with patch.object(game, "get_cached_question", return_value=q), patch.object(game, "today", return_value="2026-10-05"):
             self.start("daily")
-        with patch.object(game, "get_random_question", return_value=self.dynamic("Athens")), patch.object(game, "today", return_value="2026-10-06"):
+        with patch.object(game, "get_cached_question", return_value=self.dynamic("Athens")), patch.object(game, "today", return_value="2026-10-06"):
             response = self.start("daily")
         for header in response.headers.getlist("Set-Cookie"):
             self.assertLess(len(header), 4093)

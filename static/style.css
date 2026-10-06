@@ -127,11 +127,11 @@ button, input { font: inherit; }
 }
 
 .brand { display: inline-flex; align-items: center; gap: 13px; text-decoration: none; }
-.brand-mark { flex-shrink: 0; width: 36px; height: 36px; border: 1.5px solid var(--brand-accent); border-radius: 50%; display: grid; place-items: center; }
+.brand-mark { flex-shrink: 0; width: 44px; height: 44px; border: 1.5px solid var(--brand-accent); border-radius: 50%; display: grid; place-items: center; }
 .brand-mark svg { width: 65%; height: 65%; stroke: var(--brand-accent); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .brand:hover .brand-mark { background: var(--hover); }
 .brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; border-radius: 4px; }
-.brand-name { font-size: .96rem; font-weight: 800; letter-spacing: .14em; white-space: nowrap; }
+.brand-name { font-size: 1.08rem; font-weight: 800; letter-spacing: .14em; white-space: nowrap; }
 .brand-name span { color: var(--brand-accent); }
 .game-layout {
     flex: 1;
@@ -236,10 +236,15 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 .game-mode-button:hover { border-color: var(--accent); background: var(--surface); color: var(--strong); }
 .game-mode-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .theme-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 7px; margin-left: auto; flex-shrink: 0; }
-.sound-toggle { flex-shrink: 0; }
+.sound-toggle { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; padding: 10px; border: 0; background: transparent; color: var(--body-text); cursor: pointer; }
+.sound-toggle:hover { color: var(--strong); }
+.sound-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+.sound-toggle svg { width: 24px; height: 24px; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.sound-toggle .sound-off-icon, .sound-toggle[aria-pressed="true"] .sound-on-icon { display: none; }
+.sound-toggle[aria-pressed="true"] .sound-off-icon { display: block; }
 .sound-toggle[hidden] { display: none; }
 .sound-toggle[aria-pressed="true"] { opacity: .7; }
-.sound-controls { display: flex; align-items: center; gap: 10px; max-width: 100%; }
+.sound-controls { display: flex; align-items: center; gap: 2px; max-width: 100%; }
 .sound-controls[hidden] { display: none; }
 .sound-volume { display: flex; align-items: center; gap: 7px; color: var(--soft-text); font-size: .75rem; }
 .sound-volume input { width: clamp(70px, 8vw, 100px); margin: 0; accent-color: var(--accent); cursor: pointer; }
@@ -266,9 +271,10 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 .landing-nav + .theme-toggle { margin-left: 0; }
 .landing-hero { display: grid; grid-template-columns: minmax(0, 1.04fr) minmax(0, .96fr); align-items: center; gap: 36px; padding: 60px 0 56px; }
 .landing-eyebrow { margin: 0 0 20px; color: var(--accent); font-size: .7rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
-.landing-motto { max-width: 500px; font-size: .78rem; font-weight: 500; letter-spacing: .015em; line-height: 1.7; text-transform: none; }
+.landing-motto { max-width: 500px; line-height: 1.7; }
 .landing-intro h1 { max-width: 650px; margin-bottom: 25px; font-size: clamp(3.6rem, 6.6vw, 6.3rem); line-height: 1.03; }
-.landing-intro h1 em { color: var(--accent); font-family: Georgia, serif; font-weight: 400; }
+.landing-intro h1 em { color: var(--accent); font-family: inherit; font-weight: inherit; font-style: normal; }
+.landing-exclamation { display: inline-block; margin-left: .04em; font-style: italic; transform: rotate(9deg) translateY(-.015em); transform-origin: center 75%; }
 .landing-description { max-width: 560px; min-height: 5.1em; margin: 0 0 24px; color: var(--soft-text); font-size: 1.05rem; line-height: 1.7; }
 .landing-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; }
 .landing-actions .primary-button { width: auto; min-width: 240px; }
@@ -307,9 +313,11 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 .guide-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 45px; margin-top: 32px; }
 .step-number { color: var(--accent); font-family: Georgia, serif; font-size: 1.1rem; }
 .guide-steps h3 { margin: 12px 0 10px; color: var(--text); font-size: 1.05rem; font-weight: 600; }
-.guide-steps p, .start-copy > p:last-child { margin: 0; color: var(--soft-text); font-size: .87rem; line-height: 1.8; }
+.guide-steps p, .start-description { margin: 0; color: var(--soft-text); font-size: .87rem; line-height: 1.8; }
 .landing-start { display: grid; grid-template-columns: .8fr 1.2fr; gap: 80px; padding: 42px; margin-bottom: 40px; border: 1px solid var(--border); border-radius: 16px; background: var(--score-bg); scroll-margin-top: 25px; }
-.start-copy > p:last-child { max-width: 340px; margin-top: 20px; }
+.start-description { max-width: 340px; margin-top: 20px; }
+.start-world-map { display: block; width: 100%; max-width: 450px; height: auto; margin-top: 28px; pointer-events: none; user-select: none; color-scheme: dark; mask-image: radial-gradient(ellipse, #000 38%, transparent 78%); }
+:root[data-theme="light"] .start-world-map { color-scheme: light; }
 .start-form fieldset { min-width: 0; margin: 0 0 20px; padding: 0; border: 0; }
 .start-form legend { margin-bottom: 10px; color: var(--soft-text); font-size: .78rem; font-weight: 700; }
 .start-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -328,7 +336,7 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
     .travel-photo-stack { aspect-ratio: 10 / 9; }
     .guide-steps { gap: 22px; }
     .landing-start { grid-template-columns: 1fr; gap: 28px; padding: 30px; }
-    .start-copy > p:last-child { max-width: 100%; }
+    .start-description { max-width: 100%; }
 }
 @media (max-width: 600px) {
     .landing-nav { gap: 14px; width: 100%; order: 3; margin-left: 0; justify-content: space-between; }
@@ -385,8 +393,8 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
 @media (max-width: 600px) {
     .page-shell { width: min(100% - 28px, 520px); }
     .brand { gap: 9px; }
-    .brand-mark { width: 30px; height: 30px; }
-    .brand-name { font-size: .78rem; }
+    .brand-mark { width: 36px; height: 36px; }
+    .brand-name { font-size: .88rem; }
     .game-layout { gap: 31px; padding: 18px 0 24px; }
     .photo-frame { height: min(82vw, 430px); min-height: 270px; padding: 8px; border-radius: 12px; }
     .photo-frame::before { inset: 8px; }

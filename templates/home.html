@@ -44,7 +44,7 @@
             <section class="landing-hero" aria-labelledby="landing-title">
                 <div class="landing-intro">
                     <p class="landing-eyebrow landing-motto">Photos narrate memories, memories construct the world.</p>
-                    <h1 id="landing-title">Somewhere<br>looks <em>familiar.</em></h1>
+                    <h1 id="landing-title">Let's take<br>a <em>guess<span class="landing-exclamation">!</span></em></h1>
                     <p class="landing-description" id="album-description" aria-live="polite">A basket of pineapples, a conical hat, and a passing scooter—the photo on the right was taken in <strong>Hanoi, Vietnam</strong>. What caught your eye first?</p>
                     <div class="landing-actions">
                         <a class="primary-button" href="{{ resume_url if has_game else '#start-game' }}">{{ 'View your results' if challenge_complete else 'Continue your game →' if has_game else 'Explore the world →' }}</a>
@@ -86,7 +86,7 @@
                 </div>
             </section>
             <section class="landing-start" id="start-game" aria-labelledby="start-title">
-                <div class="start-copy"><p class="landing-eyebrow">Choose your adventure</p><h2 id="start-title">Where to next?</h2><p>Correct guesses earn 100 points. Build a streak for up to 200 per answer. A wrong guess or reveal resets your streak; revealing earns no points.</p></div>
+                <div class="start-copy"><p class="landing-eyebrow">Choose your adventure</p><h2 id="start-title">Where to next?</h2><p class="start-description">Correct guesses earn 100 points. Build a streak for up to 200 per answer. A wrong guess or reveal resets your streak; revealing earns no points.</p><img class="start-world-map" src="{{ url_for('static', filename='images/travel-world-map.svg') }}" alt="" aria-hidden="true" loading="lazy" width="600" height="300"></div>
                 <form class="start-form" action="{{ url_for('reset_game') }}" method="post">
                     <fieldset><legend>Your pace</legend><div class="start-options">
                         <label><input type="radio" name="mode" value="challenge" {% if game_mode == 'challenge' %}checked{% endif %}><span><strong>10-question challenge</strong><small>A short trip. One final score.</small></span></label>

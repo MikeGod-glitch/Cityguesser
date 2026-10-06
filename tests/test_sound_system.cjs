@@ -88,7 +88,7 @@ test('toggle persists, volume clamps, absent audio library is harmless', () => {
     const page = visit();
     page.api.setMuted(true);
     page.api.setVolume(2);
-    assert.equal(page.label.textContent, 'Sound off');
+    assert.equal(page.toggle.attrs['aria-label'], 'Enable sound effects');
     assert.equal(page.toggle.attrs['aria-pressed'], 'true');
     assert.equal(JSON.parse(page.local['city-guesser-sound-v1']).volume, 1);
     assert.equal(visit({local: page.local}).engine.muted, true);
@@ -144,7 +144,7 @@ test('other-tab updates and preference removal refresh volume display', () => {
     page.handlers.storage({key: 'city-guesser-sound-v1', newValue: '{"volume":0.2,"muted":true}'});
     assert.equal(page.volumeValue.textContent, '20%');
     assert.equal(page.engine.level, .2);
-    assert.equal(page.label.textContent, 'Sound off');
+    assert.equal(page.toggle.attrs['aria-label'], 'Enable sound effects');
     page.handlers.storage({key: 'city-guesser-sound-v1', newValue: null});
     assert.equal(page.engine.level, .3);
     assert.equal(page.volumeValue.textContent, '30%');

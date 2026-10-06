@@ -156,7 +156,6 @@
         toggle.hidden = !manager.available;
         toggle.setAttribute('aria-pressed', String(manager.muted));
         toggle.setAttribute('aria-label', manager.muted ? 'Enable sound effects' : 'Mute sound effects');
-        toggle.querySelector('[data-sound-label]').textContent = manager.muted ? 'Sound off' : 'Sound on';
     }
     updateToggle();
     volumeInput?.addEventListener('input', () => {

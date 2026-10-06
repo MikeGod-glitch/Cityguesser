@@ -15,16 +15,6 @@ uses responsive crops. All four use the [Unsplash License](https://unsplash.com/
 
 Image URLs use `https://images.unsplash.com/<original-image-ID>?auto=format&fit=max&w=1000&q=80`.
 
-## Previous homepage photograph (unused)
-
-- Local file: `home-traveler.jpg` (1400 x 1750 JPEG).
-- Photographer: Jason Mavrommatis (@jasonblackeye).
-- Source: [Person walking on road near houses, Unsplash](https://unsplash.com/photos/person-walking-on-road-near-houses-kpRiPSWQAeI).
-- Location: Vienna, Austria, explicitly identified on the photographer's source page.
-- Image: https://images.unsplash.com/photo-1556435302-b236553a6a23?auto=format&fit=max&w=1400&q=85
-- License: [Unsplash License](https://unsplash.com/license), permitting free download and use, including commercial use.
-- Downloaded on 2026-10-03. Displayed with a responsive crop and CSS color treatment; the downloaded file is unchanged.
-
 ## Question photographs
 
 The 20 local questions use the Wikimedia Commons photos below. The game links to each

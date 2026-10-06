@@ -1,11 +1,100 @@
 const themeToggle = document.querySelector('.theme-toggle');
 
+function createPhotoViewer(photo, viewport) {
+    const resetButton = viewport.querySelector('.photo-reset');
+    if (!resetButton) return null;
+    let scale = 1;
+    let x = 0;
+    let y = 0;
+    let drag = null;
+    const ready = () => photo.complete && photo.naturalWidth > 0 && !photo.hidden;
+    function draw() {
+        const width = viewport.clientWidth;
+        const height = viewport.clientHeight;
+        if (ready() && width && height) {
+            const fit = Math.min(width / photo.naturalWidth, height / photo.naturalHeight);
+            const limitX = Math.max(0, (photo.naturalWidth * fit * scale - width) / 2);
+            const limitY = Math.max(0, (photo.naturalHeight * fit * scale - height) / 2);
+            x = Math.max(-limitX, Math.min(limitX, x));
+            y = Math.max(-limitY, Math.min(limitY, y));
+        } else { x = 0; y = 0; }
+        photo.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+        viewport.dataset.photoZoomed = String(scale > 1);
+        resetButton.hidden = !ready() || scale === 1;
+    }
+    function stopDrag() {
+        if (!drag) return;
+        const pointerId = drag.id;
+        drag = null;
+        viewport.dataset.photoDragging = 'false';
+        if (viewport.hasPointerCapture(pointerId)) viewport.releasePointerCapture(pointerId);
+    }
+    function reset() {
+        stopDrag();
+        scale = 1;
+        x = y = 0;
+        draw();
+    }
+    const isControl = event => event.target.closest('button, a, input');
+    viewport.addEventListener('wheel', event => {
+        if (!ready() || isControl(event) || event.ctrlKey || !event.deltaY) return;
+        event.preventDefault();
+        stopDrag();
+        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1;
+        const delta = Math.max(-240, Math.min(240, event.deltaY * unit));
+        let nextScale = Math.max(1, Math.min(4, scale * Math.exp(-delta * .002)));
+        if (nextScale < 1.01) nextScale = 1;
+        const bounds = viewport.getBoundingClientRect();
+        const anchorX = event.clientX - bounds.left - viewport.clientWidth / 2;
+        const anchorY = event.clientY - bounds.top - viewport.clientHeight / 2;
+        const ratio = nextScale / scale;
+        x = anchorX - (anchorX - x) * ratio;
+        y = anchorY - (anchorY - y) * ratio;
+        scale = nextScale;
+        draw();
+    }, {passive: false});
+    viewport.addEventListener('pointerdown', event => {
+        if (!ready() || scale === 1 || event.button !== 0 || isControl(event)
+                || (event.pointerType && event.pointerType !== 'mouse') || drag) return;
+        event.preventDefault();
+        drag = {id: event.pointerId, x: event.clientX, y: event.clientY};
+        viewport.setPointerCapture(event.pointerId);
+        viewport.dataset.photoDragging = 'true';
+    });
+    viewport.addEventListener('pointermove', event => {
+        if (!drag || event.pointerId !== drag.id) return;
+        if (!(event.buttons & 1)) { stopDrag(); return; }
+        event.preventDefault();
+        x += event.clientX - drag.x;
+        y += event.clientY - drag.y;
+        drag.x = event.clientX;
+        drag.y = event.clientY;
+        draw();
+    });
+    for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+        viewport.addEventListener(name, event => {
+            if (drag && event.pointerId === drag.id) stopDrag();
+        });
+    }
+    viewport.addEventListener('dblclick', event => {
+        if (ready() && !isControl(event)) { event.preventDefault(); reset(); }
+    });
+    photo.addEventListener('dragstart', event => event.preventDefault());
+    resetButton.addEventListener('click', reset);
+    window.addEventListener('resize', draw);
+    window.addEventListener('blur', stopDrag);
+    window.addEventListener('pagehide', stopDrag);
+    reset();
+    return {reset};
+}
+
 // Warm only the existing next question, after the current clue has loaded.
 const cityPhoto = document.querySelector('.city-photo');
 if (cityPhoto) {
     const frame = cityPhoto.parentElement;
     const retry = frame.querySelector('.photo-retry');
     const error = cityPhoto.nextElementSibling;
+    const viewer = createPhotoViewer(cityPhoto, frame);
     const retrySource = cityPhoto.dataset.remoteSrc || cityPhoto.getAttribute('src');
     let prefetchStarted = false;
     let stopped = false;
@@ -61,8 +150,9 @@ if (cityPhoto) {
         if (cityPhoto.dataset.nextImage) warm(cityPhoto.dataset.nextImage);
         else if (cityPhoto.dataset.prefetchEndpoint) poll();
     }
-    cityPhoto.addEventListener('load', () => { updatePhoto(); startPrefetch(); });
+    cityPhoto.addEventListener('load', () => { viewer?.reset(); updatePhoto(); startPrefetch(); });
     cityPhoto.addEventListener('error', () => {
+        viewer?.reset();
         // The inline handler may already have started the remote fallback.
         if (cityPhoto.hidden) { frame.dataset.photoState = 'error'; retry.hidden = false; }
     });
@@ -71,6 +161,7 @@ if (cityPhoto) {
         error.hidden = true;
         retry.hidden = true;
         frame.dataset.photoState = 'loading';
+        viewer?.reset();
         cityPhoto.src = retrySource;
     });
     updatePhoto();

@@ -153,6 +153,15 @@ only an image URL, never draws a new question or records history. Checks are bou
 to 12 attempts, skip hidden tabs, and stop on navigation. Image errors offer a retry
 of the same photograph without scoring or revealing an answer.
 
+The gameplay photo viewport supports mouse-wheel zoom from the full-photo view
+to 4x, anchored to the cursor. Left-button pointer capture pans a zoomed photo;
+translation is clamped using the actual contained image aspect ratio. Double-click
+or the small Reset view button restores the photo. Each image load/retry resets
+the view; page navigation creates a fresh viewer. Loading/error images and overlay
+controls do not intercept wheel input. Touch scrolling and Ctrl-wheel browser zoom
+retain their native behavior. This uses the existing bitmap and CSS transforms,
+with no additional image downloads or runtime dependency.
+
 Browser Performance entries `city-page-response` and `city-photo-visible` measure
 navigation-to-first-response and first-response-to-image-ready respectively. Inspect
 them through `performance.getEntriesByType('measure')` in developer tools. These

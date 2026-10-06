@@ -154,16 +154,23 @@ button, input { font: inherit; }
     box-shadow: 0 28px 80px var(--frame-shadow), inset 0 1px rgba(255, 255, 255, .08);
 }
 .photo-frame::before { position: absolute; inset: 16px; z-index: 1; background: radial-gradient(ellipse at center, transparent 40%, var(--photo-shade)); content: ""; pointer-events: none; }
+.photo-viewport { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: 9px; background: var(--photo-bg); }
+.photo-viewport[data-photo-state="ready"] { cursor: zoom-in; }
+.photo-viewport[data-photo-state="ready"][data-photo-zoomed="true"] { cursor: grab; }
+.photo-viewport[data-photo-zoomed="true"][data-photo-dragging="true"] { cursor: grabbing; }
 .city-photo { display: block; width: 100%; height: 100%; border-radius: 9px; object-fit: contain; background: var(--photo-bg); }
+.city-photo { transform-origin: center; user-select: none; -webkit-user-drag: none; }
 .city-photo[hidden], .photo-error[hidden] { display: none; }
-.photo-error { position: absolute; inset: 16px; display: grid; place-items: center; border-radius: 9px; background: var(--photo-bg); color: var(--error-text); font-size: .88rem; text-align: center; text-underline-offset: 3px; }
+.photo-error { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 9px; background: var(--photo-bg); color: var(--error-text); font-size: .88rem; text-align: center; text-underline-offset: 3px; }
 .photo-error:hover { color: var(--strong); }
 .photo-error:focus-visible { outline: 3px solid var(--accent); outline-offset: -6px; }
-.photo-loading { position: absolute; inset: 16px; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
-.photo-frame[data-photo-state="ready"] .photo-loading,
-.photo-frame[data-photo-state="error"] .photo-loading { display: none; }
+.photo-loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
+.photo-viewport[data-photo-state="ready"] .photo-loading,
+.photo-viewport[data-photo-state="error"] .photo-loading { display: none; }
 .photo-retry { position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%); z-index: 2; }
 .photo-retry[hidden] { display: none; }
+.photo-reset.secondary-button { position: absolute; right: 12px; bottom: 12px; z-index: 2; width: auto; min-height: 32px; height: 32px; padding: 6px 10px; font-size: .7rem; cursor: pointer; }
+.photo-reset[hidden] { display: none; }
 .photo-credit { min-height: 18px; margin: 14px 4px 0; color: var(--credit); font-size: .7rem; line-height: 1.5; letter-spacing: .025em; }
 .photo-credit a { text-underline-offset: 3px; text-decoration-color: var(--credit-line); }
 .photo-credit a:hover { color: var(--strong); }
@@ -403,7 +410,7 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
     .photo-frame { height: min(82vw, 430px); min-height: 270px; padding: 8px; border-radius: 12px; }
     .photo-frame::before { inset: 8px; }
     .city-photo { border-radius: 6px; }
-    .photo-error { inset: 8px; border-radius: 6px; }
+    .photo-viewport, .photo-error { border-radius: 6px; }
     .photo-credit { margin-top: 10px; font-size: .65rem; }
     h1 { font-size: clamp(2.45rem, 11vw, 3.5rem); }
     .scoreboard div { padding: 10px 8px; }

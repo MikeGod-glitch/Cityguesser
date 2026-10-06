@@ -18,15 +18,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0b1720">
     <title>City Guesser</title>
-    <script>
-        // Apply saved colors before the stylesheet paints the page.
-        try {
-            if (localStorage.getItem('city-guesser-theme') === 'light') {
-                document.documentElement.dataset.theme = 'light';
-                document.querySelector('meta[name="theme-color"]').content = '#ffffff';
-            }
-        } catch (_) { /* Storage may be unavailable; use the default dark theme. */ }
-    </script>
+    {% include 'theme-bootstrap.html' %}
     {% if preload_url %}
     <link rel="preload" as="image" href="{{ preload_url }}">
     {% endif %}
@@ -41,22 +33,15 @@
     {% if completion %}<script id="completion-data" type="application/json">{{ completion | tojson }}</script>{% endif %}
     <div class="page-shell">
         <header class="site-header">
-            <a class="brand" href="/" aria-label="City Guesser home" title="Back to home">
-                <span class="brand-mark" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none"><path d="m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9"/></svg>
-                </span>
-                <span class="brand-name">CITY<span>GUESSER</span></span>
-            </a>
+            {% from 'brand.html' import brand %}
+            {{ brand('/') }}
             {% if not game_summary %}
             <form class="game-mode-controls" action="/reset" method="post" aria-label="Game length">
                 <button class="game-mode-button" type="submit" name="mode" value="challenge">{{ 'Restart challenge' if game_mode == 'challenge' else 'Start a 10-question challenge' }}</button>
                 <button class="game-mode-button" type="submit" name="mode" value="endless">{{ 'Restart endless mode' if game_mode == 'endless' else 'Endless mode' }}</button>
             </form>
             {% endif %}
-            <button class="game-mode-button theme-toggle" type="button" aria-label="Switch to light mode">
-                <span class="theme-icon" aria-hidden="true">☀</span>
-                <span class="theme-label">Light</span>
-            </button>
+            {% include 'theme-toggle.html' %}
             {% include 'sound-toggle.html' %}
         </header>
 

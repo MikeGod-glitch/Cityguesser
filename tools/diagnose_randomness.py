@@ -229,7 +229,7 @@ def survey(args):
                 break
             selected = [c for c in selected_catalog if c[0] not in photos_by_city] if phase == "cold" else [c for c in selected_catalog if c[0] in photos_by_city and not photos_by_city[c[0]]]
             if phase == "retry_unready":
-                # Empty pools are cached for six hours in production. Bypass only for this diagnostic retry.
+                # Bypass the production empty-pool TTL only for this diagnostic retry.
                 for city in selected:
                     provider._photo_cache.pop(city[0], None)
             with ThreadPoolExecutor(max_workers=args.workers) as executor:
@@ -267,16 +267,16 @@ def offline(args):
     pending = Future()
     with game.app.test_request_context("/play"):
         game.session.update(game_mode="endless", player_id="diagnostic")
-        game._prefetches["diagnostic"] = (pending, time.monotonic())
+        game.question_prefetch.tasks["diagnostic"] = (pending, time.monotonic())
         idx = next(i for i,c in enumerate(game.cities) if c["answer"] == "Chicago")
         with patch.object(game, "start_question_prefetch"), patch.object(game.random, "choice", return_value=idx):
             start = time.monotonic(); first = game.get_next_question(); elapsed = time.monotonic()-start
-            retained = "diagnostic" in game._prefetches
+            retained = "diagnostic" in game.question_prefetch.tasks
             pending.set_result({"answer":"Chicago", "aliases":[], "image_id":"diagnostic-chicago", "is_dynamic":True})
             # A corrected implementation rejects the late conflicting result;
             # any legitimate emergency local-history relaxation is not that bug.
             second = game.get_prefetched_question(consume=True)
-        game._prefetches.pop("diagnostic", None)
+        game.question_prefetch.tasks.pop("diagnostic", None)
     catalog = [(str(i), [], 0, 0) for i in range(4)]
     photo = {"title":"File:diagnostic.jpg", "image_url":"diagnostic", "source_url":"diagnostic"}
     cases = []
@@ -303,7 +303,7 @@ def live(args):
         start = time.monotonic()
         result = original_wait(wait_seconds, consume)
         if wait_seconds:
-            entry = game._prefetches.get(game.get_player_id())
+            entry = game.question_prefetch.tasks.get(game.get_player_id())
             state = "ready" if result else ("pending" if entry and not entry[0].done() else "failed_empty_or_missing")
             reason["value"] = state
             recorder.waits.append({"seconds":time.monotonic()-start, "state":state})
@@ -354,7 +354,7 @@ def live(args):
             if (t+1) % 10 == 0:
                 print(f"live: {t+1}/{args.questions} questions; local={sum(e['source']=='local' for e in recorder.exposures)}", flush=True)
         # Drain the four-worker diagnostic process so traces include all task outcomes.
-        game._prefetch_executor.shutdown(wait=True)
+        game.question_prefetch.executor.shutdown(wait=True)
     recorder.save(args.output)
     local_questions = [e for e in recorder.exposures if e["source"] == "local"]
     return {"game_mode":args.game_mode, "think_seconds":args.think_seconds,
@@ -383,6 +383,7 @@ def replay(args):
                 q = provider.get_random_question(recent_i, recent_c)
                 if q:
                     exposures.append({"city":q["answer"], "image_id":q["image_id"]})
+                    # Retain this historical replay window; live() measures production history.
                     recent_i = (recent_i+[q["image_id"]])[-20:]
                     recent_c = (recent_c+[q["answer"]])[-20:]
         row = metrics(exposures); row["draw_failures"] = args.questions-len(exposures); cases.append(row)

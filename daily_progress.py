@@ -27,6 +27,19 @@ def position(state):
     return state["game_stats"]["answered"] * 2 + int(bool(state.get("question_id")) and not state.get("question_resolved", False))
 
 
+def latest_snapshot(day, tokens, secret):
+    """Prefer newer progress within a run; preserve the existing different-run policy."""
+    saved = None
+    for token in tokens:
+        candidate = read(token, secret) if token else None
+        if not candidate or candidate["daily_date"] != day:
+            continue
+        if (saved is None or candidate["daily_run_id"] != saved["daily_run_id"]
+                or position(candidate) > position(saved)):
+            saved = candidate
+    return saved
+
+
 def capture(session, secret):
     if session.get("game_mode") != "daily":
         return

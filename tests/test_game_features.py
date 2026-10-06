@@ -122,11 +122,11 @@ class FeatureTests(unittest.TestCase):
     def test_daily_prefetch_fetches_dynamic_photos_but_stops_at_tenth_question(self):
         future = Future()
         future.set_result(self.dynamic())
-        with game.app.test_request_context(), patch.object(game._prefetch_executor, "submit", return_value=future) as submit:
+        with game.app.test_request_context(), patch.object(game.question_prefetch.executor, "submit", return_value=future) as submit:
             game.session.update(game_mode="daily", recent_images=["seen-image"], recent_cities=["Tokyo"])
             real_prefetch()
             player_id = game.session["player_id"]
-            self.addCleanup(game._prefetches.pop, player_id, None)
+            self.addCleanup(game.question_prefetch.tasks.pop, player_id, None)
             submit.assert_called_once_with(game.get_random_question, ("seen-image",), ("Tokyo",))
             self.assertEqual(self.dynamic(), game.get_prefetched_question(consume=True))
             game.session["game_stats"] = {"answered":9}

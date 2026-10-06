@@ -11,6 +11,14 @@
     const seenKey = 'city-guesser-sound-events-v1';
     const GameEvents = new EventTarget();
 
+    function readPreferences(serialized) {
+        const saved = JSON.parse(serialized || '{}');
+        return {
+            muted: saved.muted === true,
+            volume: Number.isFinite(saved.volume) ? Math.max(0, Math.min(1, saved.volume)) : .3,
+        };
+    }
+
     class SoundManager {
         constructor() {
             this.muted = false;
@@ -21,9 +29,9 @@
             this.generation = 0;
             this.gesture = false;
             try {
-                const saved = JSON.parse(localStorage.getItem(preferencesKey) || '{}');
-                this.muted = saved.muted === true;
-                if (Number.isFinite(saved.volume)) this.volume = Math.max(0, Math.min(1, saved.volume));
+                const saved = readPreferences(localStorage.getItem(preferencesKey));
+                this.muted = saved.muted;
+                this.volume = saved.volume;
             } catch (_) { /* Preferences are optional. */ }
             this.available = typeof window.Howl === 'function' && !window.Howler.noAudio;
             if (this.available) {
@@ -123,8 +131,12 @@
         }
         async consume(events) {
             if (!Array.isArray(events)) return;
-            const fresh = events.filter(event => event && manifest[event.type] && typeof event.id === 'string'
-                && !this.seen.has(event.id) && (this.seen.add(event.id), true));
+            const fresh = [];
+            for (const event of events) {
+                if (!event || !manifest[event.type] || typeof event.id !== 'string' || this.seen.has(event.id)) continue;
+                this.seen.add(event.id);
+                fresh.push(event);
+            }
             // Consume even when muted/blocked so these events cannot replay later.
             try { sessionStorage.setItem(seenKey, JSON.stringify([...this.seen].slice(-256))); }
             catch (_) { /* In-memory deduplication remains available. */ }
@@ -179,9 +191,9 @@
     window.addEventListener('storage', event => {
         if (event.key !== preferencesKey) return;
         try {
-            const saved = JSON.parse(event.newValue || '{}');
-            manager.muted = saved.muted === true;
-            manager.volume = Number.isFinite(saved.volume) ? Math.max(0, Math.min(1, saved.volume)) : .3;
+            const saved = readPreferences(event.newValue);
+            manager.muted = saved.muted;
+            manager.volume = saved.volume;
             window.Howler?.mute(manager.muted); window.Howler?.volume(manager.volume);
             if (manager.muted) manager.stop();
             updateToggle();

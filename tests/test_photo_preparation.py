@@ -131,19 +131,19 @@ class PrefetchHistoryTests(unittest.TestCase):
         self.context.push()
         self.addCleanup(self.context.pop)
         game.session.update(game_mode="endless",player_id="prefetch-test",recent_cities=["Paris"],recent_images=["used"])
-        self.addCleanup(lambda:game._prefetches.pop("prefetch-test",None))
+        self.addCleanup(lambda:game.question_prefetch.tasks.pop("prefetch-test",None))
 
     def seed(self, q=None):
         future = Future()
         if q is not None:
             future.set_result(q)
-        game._prefetches["prefetch-test"] = (future,time.monotonic())
+        game.question_prefetch.tasks["prefetch-test"] = (future,time.monotonic())
         return future
 
     def test_conflicting_ready_result_is_discarded_even_when_only_peeking(self):
         self.seed(question())
         self.assertIsNone(game.get_prefetched_question())
-        self.assertNotIn("prefetch-test",game._prefetches)
+        self.assertNotIn("prefetch-test",game.question_prefetch.tasks)
         self.seed(question("Tokyo","used"))
         self.assertIsNone(game.get_prefetched_question(consume=True))
 
@@ -155,7 +155,7 @@ class PrefetchHistoryTests(unittest.TestCase):
              patch.object(game,"start_question_prefetch"):
             result = game.get_next_question()
         self.assertEqual("Tokyo",result["answer"])
-        self.assertIs(pending,game._prefetches["prefetch-test"][0])
+        self.assertIs(pending,game.question_prefetch.tasks["prefetch-test"][0])
 
     def test_late_result_is_checked_again_after_an_alternative_was_shown(self):
         pending = self.seed()
@@ -173,15 +173,15 @@ class PrefetchHistoryTests(unittest.TestCase):
             result = game.get_next_question()
         self.assertEqual("London",result["answer"])
         self.assertLess(time.monotonic()-before,1)
-        self.assertIs(pending,game._prefetches["prefetch-test"][0])
+        self.assertIs(pending,game.question_prefetch.tasks["prefetch-test"][0])
 
     def test_completed_conflicting_task_is_replaced_during_prefetch(self):
         old = self.seed(question())
         new = Future()
-        with patch.object(game._prefetch_executor,"submit",return_value=new) as submit:
+        with patch.object(game.question_prefetch.executor,"submit",return_value=new) as submit:
             game.start_question_prefetch()
         self.assertEqual(1,submit.call_count)
-        self.assertIs(new,game._prefetches["prefetch-test"][0])
+        self.assertIs(new,game.question_prefetch.tasks["prefetch-test"][0])
         self.assertIsNot(old,new)
 
     def test_image_history_survives_multiple_games_and_blocks_cached_recycling(self):

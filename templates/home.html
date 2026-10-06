@@ -6,14 +6,7 @@
     <meta name="theme-color" content="#0b1720">
     <meta name="description" content="Explore 100 cities through photos. Test your geography with a quick city guessing challenge or play at your own pace.">
     <title>City Guesser · Explore the world, one photo at a time</title>
-    <script>
-        try {
-            if (localStorage.getItem('city-guesser-theme') === 'light') {
-                document.documentElement.dataset.theme = 'light';
-                document.querySelector('meta[name="theme-color"]').content = '#ffffff';
-            }
-        } catch (_) { /* Use the default theme when storage is unavailable. */ }
-    </script>
+    {% include 'theme-bootstrap.html' %}
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="{{ url_for('static', filename='script.js') }}" defer></script>
     <script src="{{ url_for('static', filename='records.js') }}" defer></script>
@@ -24,20 +17,13 @@
     <script id="daily-runs-data" type="application/json">{{ daily_runs | tojson }}</script>
     <div class="page-shell landing-shell">
         <header class="site-header">
-            <a class="brand" href="{{ url_for('home') }}" aria-label="City Guesser home" title="Back to home">
-                <span class="brand-mark" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none"><path d="m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9"/></svg>
-                </span>
-                <span class="brand-name">CITY<span>GUESSER</span></span>
-            </a>
+            {% from 'brand.html' import brand %}
+            {{ brand(url_for('home')) }}
             <nav class="landing-nav" aria-label="Main navigation">
                 <a href="#how-to-play">How to play</a>
                 {% if has_game %}<a href="{{ resume_url }}">{{ 'Your results' if challenge_complete else 'Continue game' }}</a>{% else %}<a href="{{ url_for('play') }}">Quick play ↗</a>{% endif %}
             </nav>
-            <button class="game-mode-button theme-toggle" type="button" aria-label="Switch to light mode">
-                <span class="theme-icon" aria-hidden="true">☀</span>
-                <span class="theme-label">Light</span>
-            </button>
+            {% include 'theme-toggle.html' %}
             {% include 'sound-toggle.html' %}
         </header>
         <main>

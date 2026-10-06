@@ -6,6 +6,7 @@ from xml.etree import ElementTree
 import app as game_app
 import city_provider
 from city_provider import CITIES
+from local_photos import CREDITS
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -45,7 +46,7 @@ class CityCatalogTests(unittest.TestCase):
             with self.subTest(city=city["answer"]):
                 self.assertIn(city["answer"], catalog_names)
                 self.assertIn("commons", city)
-                self.assertIn(city["answer"], game_app.credits)
+                self.assertIn(city["answer"], CREDITS)
                 self.assertTrue((IMAGE_DIR / city["image"]).is_file())
                 ElementTree.parse(IMAGE_DIR / city["image"])
 
@@ -273,7 +274,7 @@ class GameModeTests(unittest.TestCase):
 
     def test_tenth_question_does_not_prefetch_an_eleventh(self):
         self.seed_question(answered=9, correct=6)
-        with patch.object(game_app._prefetch_executor, "submit") as submit:
+        with patch.object(game_app.question_prefetch.executor, "submit") as submit:
             response = self.client.get("/play")
         self.assertEqual(200, response.status_code)
         self.assertIn(b"Question 10 / 10", response.data)

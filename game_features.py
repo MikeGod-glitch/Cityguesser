@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from city_choices import CITY_PROFILES
+from city_catalog import CITY_PROFILES
 
 BEIJING = timezone(timedelta(hours=8))
 

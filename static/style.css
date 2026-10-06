@@ -379,8 +379,7 @@ h1 { max-width: 540px; margin: 0 0 36px; font-size: clamp(2.75rem, 4vw, 4.75rem)
     .game-layout { grid-template-columns: 1fr; gap: 38px; align-items: start; align-content: start; padding-top: 28px; }
     .photo-frame { height: min(57vw, 530px); min-height: 350px; }
     .answer-panel { min-height: 0; }
-    h1 { max-width: 620px; font-size: clamp(2.7rem, 8vw, 4.3rem); }
-    h1 { margin-bottom: 28px; }
+    h1 { max-width: 620px; font-size: clamp(2.7rem, 8vw, 4.3rem); margin-bottom: 28px; }
 }
 
 @media (max-width: 760px) {

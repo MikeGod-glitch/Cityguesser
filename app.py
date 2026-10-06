@@ -1,17 +1,18 @@
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
-from flask import Flask, abort, redirect, render_template, request, session, url_for
-from threading import Lock
-from urllib.parse import quote
 from pathlib import Path
-import os
 import json
+import os
 import random
 import secrets
-import time
 
-from city_provider import CITIES, get_city_intro, get_random_question, get_cached_question, _photo_id
-from city_choices import CITY_PROFILES, generate_choices
+from flask import Flask, abort, redirect, render_template, request, session, url_for
+
+from city_catalog import CITIES, CITY_PROFILES
+from local_photos import COMMONS as commons, QUESTIONS as cities, question_image_context
+from city_provider import get_city_intro, get_random_question, get_cached_question
+from photo_rules import photo_id as _photo_id
+from city_choices import generate_choices
 from game_features import question_hints, today
+from question_prefetch import QuestionPrefetch
 import daily_progress
 
 app = Flask(__name__)
@@ -24,61 +25,8 @@ RECENT_HISTORY_LENGTH = 20
 RECENT_IMAGE_HISTORY_LENGTH = 100
 GAME_MODES = {"challenge", "endless", "daily"}
 ANSWER_MODES = {"text", "choice"}
-_prefetch_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="city-question")
-_prefetches = {}
-_prefetch_lock = Lock()
+question_prefetch = QuestionPrefetch(ttl_seconds=PREFETCH_TTL_SECONDS)
 
-# Wikimedia Commons file names. See static/images/SOURCES.md for credits.
-commons = {
-    "Chicago": "Chicago Skyline - Dusk.JPG",
-    "London": "London Skyline from London Bridge at dusk.jpg",
-    "Tokyo": "Tokyo Skyline.jpg",
-    "Paris": "The Eiffel Tower in Paris.jpg",
-    "New York": "NYC skyline empire.jpg",
-    "San Francisco": "GoldenGateBridge.jpg",
-    "Rome": "Colosseum romanum.jpg",
-    "Venice": "Rialto Bridge, Venice Italy.jpg",
-    "Barcelona": "Panoramic View of the Basílica de la Sagrada Família.jpg",
-    "Berlin": "The Brandenburg Gate.jpg",
-    "Amsterdam": "Canal houses and Oude Kerk at blue hour with water reflection in Damrak Amsterdam Netherlands.jpg",
-    "Sydney": "The Sydney Opera House. Australia.jpg",
-    "Singapore": "Singapore Marina Bay Sands Skyline.jpg",
-    "Hong Kong": "Victoria Harbour skyline, Hong Kong (2008).jpg",
-    "Dubai": "Burj Khalifa Image.jpg",
-    "Shanghai": "ShanghaiPearlTower.jpg",
-    "Beijing": "A panoramic view of the Forbidden City.jpg",
-    "Toronto": "CN Tower Toronto. (48938595411).jpg",
-    "Rio de Janeiro": "Christ-Redeemer-Rio-de-Janeiro.jpg",
-    "Istanbul": "Exterior of Hagia Sophia-.jpg",
-}
-
-credits = {
-    "Chicago": ("Alanthebox", "CC0 1.0"),
-    "London": ("Donnchadh H", "CC BY 2.0"),
-    "Tokyo": ("Ningyou", "Public domain"),
-    "Paris": ("Jeong seolah", "CC0 1.0"),
-    "New York": ("Matthew Wiebe", "CC0 1.0"),
-    "San Francisco": ("Peter Craig", "Public domain"),
-    "Rome": ("maiterozas", "CC0 1.0"),
-    "Venice": ("Peter Glyn", "CC0 1.0"),
-    "Barcelona": ("Karanchawla30", "CC BY-SA 4.0"),
-    "Berlin": ("Nirmal Dulal", "CC BY-SA 4.0"),
-    "Amsterdam": ("Basile Morin", "CC BY-SA 4.0"),
-    "Sydney": ("Bernard Spragg. NZ", "CC0 1.0"),
-    "Singapore": ("Aerosecure hub official", "CC BY-SA 4.0"),
-    "Hong Kong": ("ImMrDrake", "CC BY 3.0"),
-    "Dubai": ("Meandmybrix", "CC0 1.0"),
-    "Shanghai": ("Robpics69", "Public domain"),
-    "Beijing": ("Wuhuanqi", "CC BY-SA 4.0"),
-    "Toronto": ("Bernard Spragg. NZ", "CC0 1.0"),
-    "Rio de Janeiro": ("acediscovery", "CC BY 4.0"),
-    "Istanbul": ("Yair Haklai", "CC BY-SA 4.0"),
-}
-
-cities = [
-    {"image": f"{name.replace(' ', '')}.svg", "answer": name, "commons": filename}
-    for name, filename in commons.items()
-]
 city_aliases = {name: aliases for name, aliases, _lat, _lon in CITIES}
 city_coordinates = {name: (lat, lon) for name, _aliases, lat, lon in CITIES}
 city_flag_lookup = {
@@ -125,11 +73,8 @@ def remember_question(city):
     session["recent_cities"] = recent_cities[-RECENT_HISTORY_LENGTH:]
     session["current_question"] = city
     session["question_resolved"] = False
-    session.pop("question_result", None)
-    session.pop("question_points", None)
-    session.pop("question_revealed", None)
-    session.pop("selected_choice", None)
-    session.pop("hint_level", None)
+    for key in ("question_result", "question_points", "question_revealed", "selected_choice", "hint_level"):
+        session.pop(key, None)
     return city
 
 
@@ -249,57 +194,18 @@ def start_question_prefetch():
         get_game_mode() != "endless" and get_question_number() >= CHALLENGE_LENGTH
     ):
         return
-    player_id = get_player_id()
-    recent_images = tuple(session.get("recent_images", []))
-    recent_cities = tuple(session.get("recent_cities", []))
-    now = time.monotonic()
-
-    with _prefetch_lock:
-        for stale_id, (future, created_at) in list(_prefetches.items()):
-            if now - created_at > PREFETCH_TTL_SECONDS:
-                future.cancel()
-                _prefetches.pop(stale_id, None)
-
-        existing = _prefetches.get(player_id)
-        if existing:
-            future = existing[0]
-            if not future.done():
-                return
-            try:
-                city = future.result()
-                if city is not None and not question_conflicts_with_history(city):
-                    return
-            except Exception:
-                pass
-            _prefetches.pop(player_id, None)
-
-        future = _prefetch_executor.submit(get_random_question, recent_images, recent_cities)
-        _prefetches[player_id] = (future, now)
+    question_prefetch.start(
+        get_player_id(), get_random_question,
+        tuple(session.get("recent_images", [])), tuple(session.get("recent_cities", [])),
+        question_conflicts_with_history,
+    )
 
 
 def get_prefetched_question(wait_seconds=0, consume=False):
-    player_id = get_player_id()
-    with _prefetch_lock:
-        entry = _prefetches.get(player_id)
-    if not entry:
-        return None
-
-    future = entry[0]
-    try:
-        city = future.result(timeout=wait_seconds)
-    except FutureTimeout:
-        return None
-    except Exception:
-        city = None
-
-    if city is not None and question_conflicts_with_history(city):
-        city = None
-
-    if consume or city is None:
-        with _prefetch_lock:
-            if _prefetches.get(player_id) == entry:
-                _prefetches.pop(player_id, None)
-    return city
+    return question_prefetch.get(
+        get_player_id(), question_conflicts_with_history,
+        wait_seconds=wait_seconds, consume=consume,
+    )
 
 
 def question_conflicts_with_history(city):
@@ -322,6 +228,38 @@ def get_next_question():
     return city
 
 
+def get_daily_resume(runs, day):
+    """Validate the requested day and migrate legacy progress before clearing a session."""
+    if day > today():
+        abort(400, description="Daily challenge date is unavailable.")
+    saved = daily_progress.latest_snapshot(
+        day, (runs.get(day), request.form.get("daily_token")), app.secret_key,
+    )
+    if saved is None and day != today():
+        abort(400, description="No saved progress exists for this daily challenge.")
+    # Older browser snapshots stored an index into the former daily manifest.
+    if saved and saved.get("question_id") and not saved.get("current_question"):
+        directory = Path(app.config.get("DAILY_DIRECTORY", Path(app.instance_path) / "daily"))
+        path = directory / f"{day}.json"
+        if not path.is_file():
+            abort(409, description="The original daily question file is unavailable; saved progress has not been reset.")
+        saved["current_question"] = json.loads(path.read_text(encoding="utf-8"))[saved["question_index"]]
+        saved["current_question"]["question_id"] = saved["question_id"]
+    return saved
+
+
+def preserved_history(saved=None):
+    """Preserve bounded ordinary history and merge a resumed daily run's seen questions."""
+    histories = {}
+    for key, limit in (("recent_images", RECENT_IMAGE_HISTORY_LENGTH), ("recent_cities", RECENT_HISTORY_LENGTH)):
+        history = list(session.get(key, []))[-limit:]
+        if saved:
+            history.extend(value for value in saved.get(key, []) if value not in history)
+        if history:
+            histories[key] = history[-limit:]
+    return histories
+
+
 def start_new_game(mode="challenge", answer_mode=None):
     mode = mode if mode in GAME_MODES else "challenge"
     answer_mode = get_answer_mode() if answer_mode is None else answer_mode
@@ -330,39 +268,11 @@ def start_new_game(mode="challenge", answer_mode=None):
         get_game_stats()
         daily_progress.capture(session, app.secret_key)
     runs = dict(session.get("daily_runs", {}))
-    day = today()
-    saved = None
-    if mode == "daily":
-        day = request.form.get("daily_date", day)
-        if day > today():
-            abort(400, description="Daily challenge date is unavailable.")
-        for token in (runs.get(day), request.form.get("daily_token")):
-            candidate = daily_progress.read(token, app.secret_key) if token else None
-            if candidate and candidate["daily_date"] == day and (
-                    saved is None or candidate["daily_run_id"] != saved["daily_run_id"]
-                    or daily_progress.position(candidate) > daily_progress.position(saved)):
-                saved = candidate
-        if saved is None and day != today():
-            abort(400, description="No saved progress exists for this daily challenge.")
-        # Older browser snapshots stored an index into the former daily manifest.
-        if saved and saved.get("question_id") and not saved.get("current_question"):
-            path = Path(app.config.get("DAILY_DIRECTORY", Path(app.instance_path) / "daily")) / f"{day}.json"
-            if not path.is_file():
-                abort(409, description="The original daily question file is unavailable; saved progress has not been reset.")
-            saved["current_question"] = json.loads(path.read_text(encoding="utf-8"))[saved["question_index"]]
-            saved["current_question"]["question_id"] = saved["question_id"]
-    player_id = session.get("player_id")
-    if player_id:
-        with _prefetch_lock:
-            entry = _prefetches.pop(player_id, None)
-        if entry:
-            entry[0].cancel()
-    recent_images = list(session.get("recent_images", []))[-RECENT_IMAGE_HISTORY_LENGTH:]
-    recent_cities = list(session.get("recent_cities", []))[-RECENT_HISTORY_LENGTH:]
-    if saved:
-        # Keep this daily run's seen questions even after playing another mode.
-        for key, history in (("recent_images", recent_images), ("recent_cities", recent_cities)):
-            history.extend(value for value in saved.get(key, []) if value not in history)
+    day = request.form.get("daily_date", today()) if mode == "daily" else today()
+    saved = get_daily_resume(runs, day) if mode == "daily" else None
+    if session.get("player_id"):
+        question_prefetch.cancel(session["player_id"])
+    histories = preserved_history(saved)
     session.clear()
     session["game_mode"] = mode
     session["answer_mode"] = answer_mode
@@ -373,10 +283,7 @@ def start_new_game(mode="challenge", answer_mode=None):
         if saved:
             session.update({key: saved[key] for key in daily_progress.FIELDS if key in saved})
         get_game_stats()
-    if recent_images:
-        session["recent_images"] = recent_images[-RECENT_IMAGE_HISTORY_LENGTH:]
-    if recent_cities:
-        session["recent_cities"] = recent_cities[-RECENT_HISTORY_LENGTH:]
+    session.update(histories)
     if mode == "daily":
         daily_progress.capture(session, app.secret_key)
 
@@ -407,10 +314,6 @@ def daily_run_context():
         if run:
             run["active"] = get_game_mode() == "daily" and run["date"] == session.get("daily_date")
     return {"daily_runs": [run for run in runs if run]}
-
-
-def get_revealed_answer(city):
-    return city["answer"]
 
 
 def get_map_url(city):
@@ -459,28 +362,8 @@ def render_question(
         "completion": session.get("completion"),
         "sound_events": sound_events or [],
     }
-    if city.get("is_dynamic"):
-        return render_template(
-            "index.html", image_url=city["image_url"], fallback_url=None,
-            source_url=city["source_url"], credit=city["credit"], **context,
-        )
-
-    fallback_url = f"/static/images/{city['image']}"
-    source_url = None
-    credit = None
-    image_url = fallback_url
-    if "commons" in city:
-        filename = city["commons"]
-        source_url = f"https://commons.wikimedia.org/wiki/File:{quote(filename)}"
-        credit = credits[city["answer"]]
-        local_photo = Path(app.static_folder) / "images" / f"{city['answer'].replace(' ', '')}.jpg"
-        if local_photo.is_file():
-            image_url = f"/static/images/{local_photo.name}"
-        else:
-            image_url = f"https://commons.wikimedia.org/wiki/Special:FilePath/{quote(filename)}?width=1280"
     return render_template(
-        "index.html", image_url=image_url, fallback_url=fallback_url,
-        source_url=source_url, credit=credit, **context,
+        "index.html", **question_image_context(city, app.static_folder), **context,
     )
 
 
@@ -489,7 +372,7 @@ def render_saved_outcome(city, preload_url=None):
         return render_question(
             city,
             preload_url=preload_url,
-            revealed_answer=get_revealed_answer(city),
+            revealed_answer=city["answer"],
             city_intro=get_city_intro(city),
             round_points=0,
         )
@@ -528,15 +411,9 @@ def play():
 
 @app.route("/check", methods=["POST"])
 def check():
-    city = get_current_question()
-    if not city:
-        city = get_new_question()
-        start_question_prefetch()
-        return render_question(city)
-    if request.form.get("question_id") != city["question_id"]:
-        return render_saved_outcome(city) if session.get("question_resolved") else render_question(city)
-    if session.get("question_resolved"):
-        return render_saved_outcome(city)
+    city, response = submission_question()
+    if response is not None:
+        return response
     guess = request.form.get("guess", "")
     if get_answer_mode() == "choice":
         if guess not in city.get("choices", []):
@@ -547,10 +424,7 @@ def check():
         answer.casefold() for answer in accepted_answers
     }
     points = record_answer(is_correct)
-    if is_correct:
-        result = "✅ Correct!"
-    else:
-        result = f"❌ Wrong! Answer: {city['answer']}"
+    result = "✅ Correct!" if is_correct else f"❌ Wrong! Answer: {city['answer']}"
     save_question_outcome(result=result, points=points)
     if not is_challenge_complete():
         start_question_prefetch()
@@ -564,19 +438,26 @@ def check():
                            sound_events=sound_events)
 
 
-@app.route("/reveal", methods=["POST"])
-def reveal_answer():
-    if get_answer_mode() != "text":
-        abort(405)
+def submission_question():
+    """Share missing/stale/resolved submission handling for answers and reveals."""
     city = get_current_question()
     if not city:
         city = get_new_question()
         start_question_prefetch()
-        return render_question(city)
-    if request.form.get("question_id") != city["question_id"]:
-        return render_saved_outcome(city) if session.get("question_resolved") else render_question(city)
-    if session.get("question_resolved"):
-        return render_saved_outcome(city)
+        return city, render_question(city)
+    if request.form.get("question_id") != city["question_id"] or session.get("question_resolved"):
+        response = render_saved_outcome(city) if session.get("question_resolved") else render_question(city)
+        return city, response
+    return city, None
+
+
+@app.route("/reveal", methods=["POST"])
+def reveal_answer():
+    if get_answer_mode() != "text":
+        abort(405)
+    city, response = submission_question()
+    if response is not None:
+        return response
 
     record_answer(False)
     save_question_outcome(revealed=True)
@@ -588,7 +469,7 @@ def reveal_answer():
     return render_question(
         city,
         preload_url=preload_url,
-        revealed_answer=get_revealed_answer(city),
+        revealed_answer=city["answer"],
         city_intro=intro,
         round_points=0,
     )

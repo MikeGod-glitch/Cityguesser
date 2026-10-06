@@ -5,7 +5,7 @@ from urllib.request import Request, urlopen
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app import commons  # noqa: E402
+from local_photos import COMMONS as commons  # noqa: E402
 
 out_dir = Path(__file__).resolve().parents[1] / "static" / "images"
 failed = []

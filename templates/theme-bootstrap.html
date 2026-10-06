@@ -1,0 +1,8 @@
+<script>
+        try {
+            if (localStorage.getItem('city-guesser-theme') === 'light') {
+                document.documentElement.dataset.theme = 'light';
+                document.querySelector('meta[name="theme-color"]').content = '#ffffff';
+            }
+        } catch (_) { /* Use the default theme when storage is unavailable. */ }
+    </script>

@@ -168,8 +168,10 @@ class DynamicQuestionPool:
         # normal lowest-stock order even when other cities have cached candidates.
         empty = [city for city in cities if counts[city[0]] == 0]
         reusable = [city for city in cities if city[0] in cached]
-        if empty:
+        low_supply = sum(counts.values()) < 100 or len(counts) < 21
+        if empty and not (low_supply and reusable and self.candidate_turns < 3):
             choices = empty
+            self.candidate_turns = 0
         elif reusable and self.candidate_turns < 3:
             choices = reusable
             self.candidate_turns += 1

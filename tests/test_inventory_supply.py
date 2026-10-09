@@ -230,10 +230,12 @@ class CandidateSchedulingTests(SupplyTestCase):
         self.assertEqual(1, len(set(calls[3:])))
         self.assertNotEqual(calls[0], calls[3])
 
-    def test_empty_city_gets_coverage_before_reusing_other_city_candidates(self):
+    def test_low_supply_reuses_candidates_then_reserves_empty_city_coverage(self):
         self.seed_stock("Paris", 2)
         self.seed_many_candidates("Paris")
-        self.assertEqual(["London"], self.run_batch(self.pool(batch_size=1)))
+        calls = self.run_batch(self.pool(batch_size=10))
+        self.assertEqual(["Paris"] * 9, calls[:9])
+        self.assertEqual("London", calls[9])
 
     def test_expired_exhausted_and_temporarily_failed_candidates_do_not_take_priority(self):
         self.seed_many_candidates("Paris", 1)
@@ -298,15 +300,18 @@ class CommonsRequestSchedulingTests(SupplyTestCase):
         self.assertTrue(all(b - a >= provider.COMMONS_REQUEST_INTERVAL_SECONDS
                             for a, b in zip(started, started[1:])))
 
-    def test_search_overload_publishes_shared_backoff_and_blocks_following_request(self):
+    def test_search_overload_blocks_search_but_allows_metadata(self):
         overloaded = '{"error":{"code":"cirrussearch-too-busy-error","info":"busy"}}'
-        with patch.object(provider, "urlopen", return_value=StringIO(overloaded)) as network:
+        with patch.object(provider, "urlopen", side_effect=[StringIO(overloaded), StringIO('{"query": {}}')]) as network, \
+             patch.object(provider.time, "sleep"):
             with self.assertRaises(provider.CommonsApiError):
-                provider._api_get({"action": "query"})
+                provider._api_get({"action": "query", "generator": "search"})
             with self.assertRaises(provider.CommonsApiError):
-                provider._api_get({"action": "query"})
-        network.assert_called_once()
-        self.assertGreater(provider.commons_retry_delay(), 29)
+                provider._api_get({"action": "query", "generator": "search"})
+            self.assertEqual({"query": {}}, provider._api_get({"action": "query", "prop": "imageinfo"}))
+        self.assertEqual(2, network.call_count)
+        self.assertEqual(0, provider.commons_retry_delay())
+        self.assertGreater(provider.commons_search_retry_delay(), 29)
 
     def test_wikipedia_does_not_wait_for_commons_budget_or_backoff(self):
         provider._api_retry_after[provider.COMMONS_API] = time.time() + 90

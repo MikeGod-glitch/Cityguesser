@@ -35,16 +35,23 @@ at most 0.3 seconds for prefetch, and recheck the cache. If no dynamic question 
 ready, a themed loading page retries every five seconds and provides manual retry
 and home links. Pending work and game progress survive foreground timeouts.
 There is no fixed question fallback, and waiting never records an answer or photo.
+When strict prepared stock is empty, gameplay progressively reduces the recent-city
+window to 10, 5, 2, 1, then 0 entries. Recent-photo exclusions always remain in force.
+When possible it leaves at least two older cities eligible for a random draw, avoids
+the latest city, and keeps the ordinary strict window whenever it has stock.
+Foreground cache and prefetch conflict checks share this policy.
 
 Ordinary page requests start one shared daemon replenishment worker when stock
 is below target. Once started, it continues without further browser requests.
 Every catalog city has a minimum-stock goal of twelve photos and a target of twenty-four.
-Scheduling prioritizes empty cities, then cities with fresh, unstocked candidates,
+Scheduling normally prioritizes empty cities, then cities with fresh, unstocked candidates,
 ordered by minimum-stock status and stock count with randomized ties. It prepares
 up to three photos per city turn, rechecking freshness, exclusions and stock each
 time. Every fourth candidate-priority turn returns to the normal lowest-stock
 order so cities needing discovery retain a share of the request budget. City runs
 rotate when alternatives exist and stop at the minimum/target boundary.
+When stock is below 100 photos or covers fewer than 21 cities, up to three city
+turns prioritize existing candidates before reserving a turn for empty-city coverage.
 Each batch attempts at most 24 preparations,
 with three seconds between attempts. A failed city is deferred for five minutes
 without stopping other cities; global API backoff stops the batch without marking
@@ -55,7 +62,11 @@ an active HTTP request finishes first. These are inventory goals,
 not a guarantee that Commons provides enough valid photos for every city. Prepared
 questions are saved atomically to `instance/prepared-questions.json` and restored
 on the first request after restart, retaining their original expiry. Newly prepared
-questions last 24 hours; previously saved entries are not retroactively extended.
+question metadata lasts 24 hours. Expired metadata remains usable and is restored
+only while its verified thumbnail is still in the local cache; the original metadata
+expiry is never extended. The application retains thumbnails for up to 30 days,
+subject to the existing 256 MiB cache capacity. Missing or evicted local files cannot
+keep expired metadata usable. Remote-only expired questions are discarded.
 Testing requests do not start the shared worker. The fixed homepage album is
 independent of this gameplay pool.
 
@@ -63,16 +74,20 @@ Player prefetch first draws from eligible prepared inventory using the same city
 unseen-photo and history rules; it only attempts fresh preparation when no eligible
 stock exists. All Commons API discovery/preparation calls share a process-local
 serial request lock and a minimum three-second start interval. Error handling
-publishes Retry-After/API backoff before releasing the lock, including search-busy
-errors. Wikipedia introductions and thumbnail file downloads use their own paths.
+publishes retry state before releasing the lock. HTTP 429/503, ratelimited and
+maxlag retain global backoff. A cirrussearch-too-busy-error pauses only search
+requests for 30 seconds; geosearch and thumbnail/credit metadata requests remain
+available under the shared pacing budget. Discovery skips paused search queries. Wikipedia introductions and thumbnail file downloads use their own paths.
 This budget is per application process, not coordinated across multiple servers.
 
 Eligible candidate lists are saved atomically to `instance/photo-candidates.json`
 when discovery changes them, including discoveries followed by preparation failure.
 They are restored alongside prepared inventory on first use. Entries keep their
 original six-hour freshness and stale-fallback deadlines; no restart extends them.
-A fingerprint of discovery/filtering/catalog/provider source invalidates old rule
-decisions. Restoring validates city names, dates and candidate fields, limits each
+A fingerprint of discovery, filtering, eligibility constants and catalog source
+invalidates old rule decisions; unrelated provider selection edits do not. Explicitly compatible fingerprints from before this supply-policy change
+can migrate only while the separate discovery/filtering fingerprint still matches;
+future eligibility-rule changes invalidate that migration. Restoring validates city names, dates and candidate fields, limits each
 city to 500 entries, and ignores files exceeding 20 MiB or corrupt data without
 discarding prepared questions. Unchanged candidate lists are not rewritten after
 every preparation. This adds no service, database or runtime dependency.
@@ -86,7 +101,11 @@ street/building/skyline category search with one randomly chosen theme (parks,
 markets, squares, stations, residences or museums). Direct categories supplement
 failed/empty deep searches, or pools below 80 candidates.
 Discovery is bounded to five requests, two seconds apart, and merges file identities
-before family deduplication. Partial query failures retain valid discoveries.
+before family deduplication. When stock is below 100 photos or covers fewer than
+21 cities, it returns early once 12 filtered candidates not already in prepared
+stock are found. Early or partially failed discoveries expire after five minutes
+to allow later area/category diversification; complete healthy discoveries retain
+the six-hour freshness window. Quality and geographic evidence filters are unchanged. Partial query failures retain valid discoveries.
 Category and outer-area results require city evidence in their title or metadata
 to reduce neighboring-city contamination. JPEG/PNG/WebP,
 the 300,000-pixel minimum and the score floor of five remain in force. Candidate

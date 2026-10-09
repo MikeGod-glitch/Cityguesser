@@ -13,7 +13,7 @@ from flask import Flask, abort, jsonify, redirect, render_template, request, sen
 from city_catalog import CITIES, CITY_PROFILES
 from local_photos import COMMONS as commons, question_image_context
 from city_provider import get_city_intro, get_random_question, get_cached_question as _get_cached_question
-from city_provider import has_unseen_cached
+from city_provider import has_unseen_cached, effective_city_exclusions, set_local_image_checker
 from city_provider import prepared_question_snapshot
 from image_cache import ThumbnailCache
 from photo_rules import photo_id as _photo_id
@@ -38,7 +38,10 @@ RECENT_IMAGE_HISTORY_LENGTH = 100
 GAME_MODES = {"challenge", "endless", "daily"}
 ANSWER_MODES = {"text", "choice"}
 question_prefetch = QuestionPrefetch(ttl_seconds=PREFETCH_TTL_SECONDS)
-thumbnail_cache = ThumbnailCache(Path(app.instance_path) / "thumbnails")
+thumbnail_cache = ThumbnailCache(Path(app.instance_path) / "thumbnails", ttl_seconds=30 * 24 * 3600)
+set_local_image_checker(lambda question: bool(
+    not app.testing and thumbnail_cache.find(thumbnail_cache.key(question.get("image_url", "")))
+))
 
 
 def prepare_question_image(question):
@@ -119,6 +122,7 @@ def get_player_id():
 def get_cached_question(excluded_images=(), excluded_cities=()):
     return _get_cached_question(
         excluded_images, excluded_cities, seen_images=question_rotation.seen(get_player_id()),
+        relax_cities=True,
     )
 
 
@@ -241,7 +245,7 @@ def get_prefetched_question(wait_seconds=0, consume=False):
 
 def question_conflicts_with_history(city):
     recent_images = session.get("recent_images", [])
-    if city["answer"] in session.get("recent_cities", []) or city.get("image_id") in recent_images:
+    if city["answer"] in effective_city_exclusions(recent_images, session.get("recent_cities", [])) or city.get("image_id") in recent_images:
         return True
     seen = question_rotation.seen(get_player_id())
     return (city.get("image_id") in seen

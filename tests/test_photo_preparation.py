@@ -5,6 +5,7 @@ import time
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlsplit
 
 import app as game
 import city_provider as provider
@@ -81,6 +82,72 @@ class PhotoPreparationTests(unittest.TestCase):
                 provider._api_get({"action":"query"})
         self.assertEqual(1,network.call_count)
         self.assertGreater(provider._api_retry_after[provider.COMMONS_API],time.time()+25)
+
+    def test_search_busy_does_not_discard_discovery_or_block_question_preparation(self):
+        calls = []
+        def network(request, **kwargs):
+            params = parse_qs(urlsplit(request.full_url).query)
+            calls.append(params)
+            if params.get("generator") == ["search"]:
+                data = {"error": {"code": "cirrussearch-too-busy-error", "info": "busy"}}
+            elif params.get("generator") == ["geosearch"]:
+                data = {"query": {"pages": [photo_page()]}}
+            else:
+                data = {"query": {"pages": [{"imageinfo": [{
+                    "thumburl": "https://example.test/thumb",
+                    "extmetadata": {"Artist": {"value": "Author"},
+                                    "LicenseShortName": {"value": "CC0"}}}]}]}}
+            return io.StringIO(json.dumps(data))
+        with patch.object(provider, "urlopen", side_effect=network):
+            question = provider.get_city_question(self.city)
+        self.assertIsNotNone(question)
+        self.assertEqual("https://example.test/thumb", question["image_url"])
+        self.assertEqual(["Author", "CC0"], question["credit"])
+        self.assertEqual(1, sum(params.get("generator") == ["search"] for params in calls))
+        self.assertEqual(0, provider.commons_retry_delay())
+        self.assertGreater(provider.commons_search_retry_delay(), 0)
+
+    def test_global_failures_block_search_and_metadata(self):
+        for error in (HTTPError("https://example.test", 503, "unavailable", {"Retry-After": "40"}, None),
+                      provider.CommonsApiError("ratelimited", "limited"),
+                      provider.CommonsApiError("maxlag", "busy")):
+            with self.subTest(error=error):
+                provider._api_retry_after.clear()
+                with patch.object(provider, "urlopen", side_effect=error) as network:
+                    with self.assertRaises((HTTPError, provider.CommonsApiError)):
+                        provider._api_get({"action": "query", "generator": "search"})
+                    with self.assertRaises(provider.CommonsApiError):
+                        provider._api_get({"action": "query", "prop": "imageinfo"})
+                network.assert_called_once()
+                self.assertGreater(provider.commons_retry_delay(), 0)
+
+    def test_low_inventory_discovery_has_short_ttl_and_ignores_stocked_photos(self):
+        pages = [photo_page(f"File:Paris skyline {chr(0x4e00+i)}.jpg") for i in range(12)]
+        data = {"query": {"pages": pages}}
+        with patch.object(provider, "_api_get", return_value=data) as api:
+            photos = provider._fetch_photos(self.city)
+        self.assertEqual(12, len(photos))
+        self.assertEqual(1, api.call_count)
+        self.assertLessEqual(provider._photo_cache["Paris"]["expires_at"] - time.time(),
+                             provider.EMPTY_CACHE_TTL_SECONDS)
+        provider._photo_cache.clear()
+        stocked = [{"question": {"image_id": provider._photo_id(page["title"]), "answer": "Paris"}}
+                   for page in pages]
+        with patch.object(provider, "prepared_question_snapshot", return_value=stocked), \
+                patch.object(provider, "_api_get", return_value=data) as api:
+            provider._fetch_photos(self.city)
+        self.assertEqual(5, api.call_count)
+
+    def test_healthy_inventory_retains_full_discovery(self):
+        pages = [photo_page(f"File:Paris skyline {chr(0x4e00+i)}.jpg") for i in range(12)]
+        stocked = [{"question": {"image_id": f"stock-{i}", "answer": f"city-{i % 21}"}}
+                   for i in range(100)]
+        with patch.object(provider, "prepared_question_snapshot", return_value=stocked), \
+                patch.object(provider, "_api_get", return_value={"query": {"pages": pages}}) as api:
+            provider._fetch_photos(self.city)
+        self.assertEqual(5, api.call_count)
+        self.assertGreater(provider._photo_cache["Paris"]["expires_at"] - time.time(),
+                           provider.CACHE_TTL_SECONDS - 1)
 
     def test_one_file_prepares_thumbnail_and_credit_then_reuses_them(self):
         photo = {"title":photo_page()["title"], "source_url":"https://example.test/source", "image_url":None}

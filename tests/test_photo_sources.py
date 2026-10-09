@@ -127,3 +127,42 @@ class PhotoSourceTests(unittest.TestCase):
                                             lambda: 30 if paused else 0)
         self.assertEqual(1, len(photos))
         pause.assert_not_called()
+
+    def test_search_backoff_keeps_geographic_discovery_available(self):
+        calls = []
+        def api(params):
+            calls.append(params)
+            return {"query": {"pages": [photo_page()]}}
+        photos, stats = collect_city_photos(
+            self.city, api, provider._select_photo_candidates, lambda: 0,
+            search_retry_delay=lambda: 30)
+        self.assertEqual(1, len(photos))
+        self.assertEqual(3, len(calls))
+        self.assertTrue(all(params["generator"] == "geosearch" for params in calls))
+        self.assertIn("search retry period", stats["partial_failure"])
+
+    def test_low_inventory_can_stop_after_enough_filtered_candidates(self):
+        calls = []
+        def api(params):
+            calls.append(params)
+            return {"query": {"pages": [photo_page(f"File:Paris skyline {chr(0x4e00+i)}.jpg")
+                                          for i in range(12)]}}
+        photos, stats = collect_city_photos(
+            self.city, api, provider._select_photo_candidates, lambda: 0,
+            early_stop=lambda photos: len(photos) >= 12)
+        self.assertEqual(12, len(photos))
+        self.assertEqual(1, len(calls))
+        self.assertTrue(stats["early_stopped"])
+
+    def test_rejected_files_do_not_trigger_early_stop(self):
+        calls = []
+        def api(params):
+            calls.append(params)
+            return {"query": {"pages": [photo_page(f"File:Paris map {i}.svg", "image/svg+xml")
+                                          for i in range(20)]}}
+        photos, stats = collect_city_photos(
+            self.city, api, provider._select_photo_candidates, lambda: 0,
+            early_stop=lambda photos: len(photos) >= 12)
+        self.assertEqual([], photos)
+        self.assertEqual(5, len(calls))
+        self.assertFalse(stats["early_stopped"])

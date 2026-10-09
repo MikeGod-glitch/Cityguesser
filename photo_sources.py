@@ -33,7 +33,8 @@ def discovery_queries(city, limit=100):
                          "gsrlimit": limit, "gsrsearch": f"({query}) filetype:bitmap"}
 
 
-def collect_city_photos(city, api_get, select, retry_delay, *, limit=100, target=80):
+def collect_city_photos(city, api_get, select, retry_delay, *, limit=100, target=80,
+                       search_retry_delay=None, early_stop=None):
     """Merge by file identity before family dedup; retain partial successes on errors."""
     pages = {}
     counts = {}
@@ -41,9 +42,13 @@ def collect_city_photos(city, api_get, select, retry_delay, *, limit=100, target
     last_error = None
     successful = 0
     previous_call = None
+    early_stopped = False
     for source, params in discovery_queries(city, limit):
         if retry_delay() > 0:
             break
+        if source != "area" and search_retry_delay and search_retry_delay() > 0:
+            last_error = OSError("Photo search is waiting for the search retry period")
+            continue
         # Always diversify geographically rich pools with one category query.
         # Direct categories remain a fallback for failed/empty deep searches.
         if (source == "incategory" and counts.get("deepcat", 0) > 0
@@ -79,10 +84,14 @@ def collect_city_photos(city, api_get, select, retry_delay, *, limit=100, target
                     pages[key] = {**previous, **page, "categories": list(cats.values())}
         except (OSError, ValueError, KeyError) as exc:
             last_error = exc
+        if early_stop and early_stop(select(city, list(pages.values()))):
+            early_stopped = True
+            break
     if not successful and last_error is not None:
         raise last_error
     if not successful and retry_delay() > 0:
         raise OSError("Photo discovery is waiting for the API retry period")
     return select(city, list(pages.values())), {"raw_files": len(pages), "sources": counts,
                                               "location_rejections": len(location_rejections),
-                                              "partial_failure": str(last_error) if last_error else None}
+                                              "partial_failure": str(last_error) if last_error else None,
+                                              "early_stopped": early_stopped}

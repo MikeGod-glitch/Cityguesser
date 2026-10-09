@@ -40,10 +40,27 @@ STALE_CACHE_TTL_SECONDS = 24 * 60 * 60
 COMMONS_REQUEST_INTERVAL_SECONDS = 3
 CANDIDATE_MAX_PER_CITY = 500
 # Invalidate persisted decisions when discovery, filtering or city data changes.
-CANDIDATE_RULE_VERSION = hashlib.sha256(b"candidate-schema-1" + b"".join(
-    Path(__file__).with_name(name).read_bytes()
-    for name in ("photo_rules.py", "photo_sources.py", "city_catalog.py", "city_provider.py")
-)).hexdigest()
+
+
+# Selection and persistence changes do not alter the previous candidate filters.
+COMPATIBLE_CANDIDATE_RULE_VERSIONS = {
+    "16c00a14fdd800fb8e69e6257e207f9a92ba0601ae947c3b53fbaacda2a08725",
+    "46112d2ac61e1fdadedfabb210c4cd53fb3969fedbac30c5cbffaed16cd853c4",
+    "a559d35332caf3f4a339eab0af5177f8612ecdc0509f876fc218ee2f9a966372",
+}
+
+# Guard legacy-cache migration against future discovery/filter changes.
+_filter_source = Path(__file__).read_text(encoding="utf-8")
+_filter_source = (_filter_source[_filter_source.index("MIN_PHOTO_SCORE ="):
+                                  _filter_source.index("# Invalidate persisted decisions")]
+                  + _filter_source[_filter_source.rindex("def _select_photo_candidates("):
+                                   _filter_source.rindex("def _refresh_photos(")])
+CANDIDATE_FILTER_VERSION = hashlib.sha256(b"".join(
+    Path(__file__).with_name(name).read_bytes().replace(b"\r\n", b"\n")
+    for name in ("photo_rules.py", "photo_sources.py", "city_catalog.py")
+) + _filter_source.encode()).hexdigest()
+CANDIDATE_RULE_VERSION = CANDIDATE_FILTER_VERSION
+COMPATIBLE_FILTER_VERSION = "55a006505327d1f42ab0e30f1dac0c95c4f9a75465bcbe1db12010cb7228465d"
 
 _photo_cache = {}
 _credit_cache = {}
@@ -57,6 +74,7 @@ _cache_lock = Lock()
 _commons_request_lock = Lock()
 _commons_next_request_at = 0
 _candidate_generation = 0
+_local_image_checker = lambda question: False
 _html_tag = re.compile(r"<[^>]+>")
 
 
@@ -94,6 +112,8 @@ def _api_get(params, endpoint=COMMONS_API):
     with _commons_request_lock:
         if commons_retry_delay() > 0:
             raise CommonsApiError("backoff", "API retry period has not elapsed")
+        if _is_search_request(params) and commons_search_retry_delay() > 0:
+            raise CommonsApiError("search_backoff", "Photo search is waiting to retry")
         delay = _commons_next_request_at - time.monotonic()
         if delay > 0:
             time.sleep(delay)
@@ -105,6 +125,9 @@ def _request_api(params, endpoint):
     with _cache_lock:
         if _api_retry_after.get(endpoint, 0) > time.time():
             raise CommonsApiError("backoff", "API retry period has not elapsed")
+        if (_is_search_request(params)
+                and _api_retry_after.get((endpoint, "search"), 0) > time.time()):
+            raise CommonsApiError("search_backoff", "Photo search is waiting to retry")
     query = urlencode({"format": "json", "formatversion": 2, **params})
     request = Request(
         f"{endpoint}?{query}",
@@ -122,8 +145,10 @@ def _request_api(params, endpoint):
         raise
     except CommonsApiError as exc:
         if exc.code in {"ratelimited", "maxlag", "cirrussearch-too-busy-error"}:
+            scope = (endpoint, "search") if exc.code == "cirrussearch-too-busy-error" else endpoint
             with _cache_lock:
-                _api_retry_after[endpoint] = time.time() + FAILURE_RETRY_SECONDS
+                _api_retry_after[scope] = max(_api_retry_after.get(scope, 0),
+                                            time.time() + FAILURE_RETRY_SECONDS)
         raise
 
 
@@ -137,6 +162,17 @@ def _clean_metadata(value, default="Unknown"):
 def commons_retry_delay():
     with _cache_lock:
         return max(0, _api_retry_after.get(COMMONS_API, 0) - time.time())
+
+
+def _is_search_request(params):
+    return (params.get("generator") == "search" or params.get("action") == "opensearch"
+            or "search" in str(params.get("list", "")).split("|"))
+
+
+def commons_search_retry_delay():
+    with _cache_lock:
+        return max(0, _api_retry_after.get(COMMONS_API, 0) - time.time(),
+                   _api_retry_after.get((COMMONS_API, "search"), 0) - time.time())
 
 
 def _fetch_photos(city):
@@ -259,10 +295,17 @@ def _refresh_photos(city, stale_cache=None):
     global _candidate_generation
     name = city[0]
     filtering = {}
+    entries = prepared_question_snapshot()
+    low_supply = len(entries) < 100 or len({entry["question"]["answer"] for entry in entries}) < 21
+    stocked = {entry["question"]["image_id"] for entry in entries}
+    def enough_candidates(photos):
+        return sum(_photo_id(photo["title"]) not in stocked for photo in photos) >= 12
     photos, discovery = collect_city_photos(
         city, lambda params: _check_api_data(_api_get(params)),
         lambda city, pages: _select_photo_candidates(city, pages, filtering), commons_retry_delay,
         limit=PHOTO_CANDIDATE_LIMIT,
+        search_retry_delay=commons_search_retry_delay,
+        early_stop=enough_candidates if low_supply else None,
     )
     photo_statistics.record(name, "discovery", candidates=len(photos), **discovery, **filtering)
 
@@ -273,7 +316,10 @@ def _refresh_photos(city, stale_cache=None):
     now = time.time()
     with _cache_lock:
         _photo_cache[name] = {
-            "expires_at": now + (CACHE_TTL_SECONDS if photos else EMPTY_CACHE_TTL_SECONDS),
+            # Revisit partial discovery soon to recover area/category variety.
+            "expires_at": now + (CACHE_TTL_SECONDS if photos and not discovery.get("early_stopped")
+                                  and not discovery.get("partial_failure")
+                                  else EMPTY_CACHE_TTL_SECONDS),
             "stale_until": now + STALE_CACHE_TTL_SECONDS,
             "photos": photos,
         }
@@ -438,7 +484,7 @@ def get_city_question(city, excluded_images=(), *, seen_images=()):
 
 def get_random_question(excluded_images=(), excluded_cities=(), *, seen_images=()):
     """Draw ready inventory first; generate only when no eligible stock exists."""
-    cached = get_cached_question(excluded_images, excluded_cities, seen_images=seen_images)
+    cached = get_cached_question(excluded_images, excluded_cities, seen_images=seen_images, relax_cities=True)
     if cached is not None:
         return cached
     excluded = set(excluded_images)
@@ -450,7 +496,7 @@ def get_random_question(excluded_images=(), excluded_cities=(), *, seen_images=(
         question = get_city_question(city, excluded, seen_images=seen_images)
         if question is not None:
             return question
-    return get_cached_question(excluded_images, excluded_cities, seen_images=seen_images)
+    return get_cached_question(excluded_images, excluded_cities, seen_images=seen_images, relax_cities=True)
 
 
 def candidate_cache_generation():
@@ -476,9 +522,12 @@ def candidate_photo_snapshot():
 
 
 def restore_candidate_photos(data):
-    """Restore validated decisions only under the exact current rule version."""
+    """Restore validated candidates under current or explicitly compatible rules."""
     global _candidate_generation
-    if not isinstance(data, dict) or data.get("rule_version") != CANDIDATE_RULE_VERSION:
+    accepted_versions = {CANDIDATE_RULE_VERSION}
+    if CANDIDATE_FILTER_VERSION == COMPATIBLE_FILTER_VERSION:
+        accepted_versions |= COMPATIBLE_CANDIDATE_RULE_VERSIONS
+    if not isinstance(data, dict) or data.get("rule_version") not in accepted_versions:
         return
     entries = data.get("cities")
     if not isinstance(entries, dict):
@@ -519,16 +568,50 @@ def restore_candidate_photos(data):
                 _candidate_generation += 1
 
 
-def get_cached_question(excluded_images=(), excluded_cities=(), *, seen_images=()):
-    """Pick an already prepared photo without any network calls or history relaxation."""
+def set_local_image_checker(checker):
+    """Allow expired metadata only while a verified local thumbnail exists."""
+    global _local_image_checker
+    _local_image_checker = checker
+
+
+def _usable_prepared(entry, now):
+    return entry["expires_at"] > now or _local_image_checker(entry["question"])
+
+
+def effective_city_exclusions(excluded_images=(), excluded_cities=()):
+    """Relax city history only when strict stock is empty; never relax photos."""
+    history = list(excluded_cities)
     excluded = set(excluded_images)
-    excluded_names = set(excluded_cities)
+    now = time.time()
+    with _cache_lock:
+        available = {name for name, photos in _prepared_questions.items()
+                     if any(image not in excluded and _usable_prepared(entry, now)
+                            for image, entry in photos.items())}
+    if available - set(history):
+        return history
+    # Keep a small random choice of older cities whenever supply permits it.
+    older = available - set(history[-1:])
+    target = min(2, len(older)) or 1
+    for window in (10, 5, 2, 1, 0):
+        if window > len(history):
+            continue
+        blocked = history[-window:] if window else []
+        if len(available - set(blocked)) >= target:
+            return blocked
+    return history
+
+
+def get_cached_question(excluded_images=(), excluded_cities=(), *, seen_images=(), relax_cities=False):
+    """Pick prepared photos without network calls; optionally relax city history."""
+    excluded = set(excluded_images)
+    excluded_names = set(effective_city_exclusions(excluded_images, excluded_cities)
+                         if relax_cities else excluded_cities)
     now = time.time()
     candidates = {}
     with _cache_lock:
         for name, photos in _prepared_questions.items():
             for image_id in list(photos):
-                if photos[image_id]["expires_at"] <= now:
+                if not _usable_prepared(photos[image_id], now):
                     photos.pop(image_id)
             if name not in excluded_names:
                 eligible = [entry["question"] for image_id, entry in photos.items() if image_id not in excluded]
@@ -544,7 +627,7 @@ def get_cached_question(excluded_images=(), excluded_cities=(), *, seen_images=(
 def has_unseen_cached(city, excluded_images, seen_images):
     excluded = set(excluded_images) | set(seen_images)
     with _cache_lock:
-        return any(image_id not in excluded and entry["expires_at"] > time.time()
+        return any(image_id not in excluded and _usable_prepared(entry, time.time())
                    for image_id, entry in _prepared_questions.get(city, {}).items())
 
 
@@ -555,7 +638,7 @@ def prepared_question_snapshot():
         return [
             {"question": entry["question"].copy(), "expires_at": entry["expires_at"]}
             for photos in _prepared_questions.values() for entry in photos.values()
-            if entry["expires_at"] > now
+            if _usable_prepared(entry, now)
         ]
 
 
@@ -573,7 +656,7 @@ def restore_prepared_questions(entries):
             expires_at = entry.get("expires_at")
             if (not isinstance(question, dict)
                     or not isinstance(expires_at, (int, float))
-                    or not now < expires_at <= now + PREPARED_QUESTION_TTL_SECONDS
+                    or not 0 < expires_at <= now + PREPARED_QUESTION_TTL_SECONDS
                     or not isinstance(question.get("answer"), str)
                     or question["answer"] not in names
                     or question.get("is_dynamic") is not True
@@ -585,6 +668,8 @@ def restore_prepared_questions(entries):
                     or not all(isinstance(value, str) for value in question["credit"])
                     or not all(isinstance(value, str) for value in question["aliases"])
                     or not isinstance(question.get("scene_key", ""), str)):
+                continue
+            if not _usable_prepared(entry, now):
                 continue
             photos = _prepared_questions.setdefault(question["answer"], {})
             existing = photos.get(question["image_id"])
